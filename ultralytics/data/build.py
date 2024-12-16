@@ -81,7 +81,7 @@ def seed_worker(worker_id):  # noqa
     random.seed(worker_seed)
 
 
-def build_yolo_dataset(cfg, img_path, batch, data, mode="train", rect=False, stride=32, multi_modal=False):
+def build_yolo_dataset(cfg, img_path, batch, data, mode="train", rect=False, stride=32, multi_modal=False, load_vp=True):
     """Build YOLO Dataset."""
     dataset = YOLOMultiModalDataset if multi_modal else YOLODataset
     return dataset(
@@ -100,6 +100,7 @@ def build_yolo_dataset(cfg, img_path, batch, data, mode="train", rect=False, str
         classes=cfg.classes,
         data=data,
         fraction=cfg.fraction if mode == "train" else 1.0,
+        load_vp=cfg.load_vp and load_vp
     )
 
 
@@ -121,6 +122,7 @@ def build_grounding(cfg, img_path, json_file, batch, mode="train", rect=False, s
         task=cfg.task,
         classes=cfg.classes,
         fraction=cfg.fraction if mode == "train" else 1.0,
+        load_vp=cfg.load_vp
     )
 
 

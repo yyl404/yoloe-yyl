@@ -581,39 +581,6 @@ def test_model_embeddings():
         assert len(model_detect.embed(source=batch, imgsz=32)) == len(batch)
         assert len(model_segment.embed(source=batch, imgsz=32)) == len(batch)
 
-
-@pytest.mark.skipif(checks.IS_PYTHON_3_12, reason="YOLOWorld with CLIP is not supported in Python 3.12")
-def test_yolo_world():
-    """Tests YOLO world models with CLIP support, including detection and training scenarios."""
-    model = YOLO("yolov8s-world.pt")  # no YOLO11n-world model yet
-    model.set_classes(["tree", "window"])
-    model(SOURCE, conf=0.01)
-
-    model = YOLO("yolov8s-worldv2.pt")  # no YOLO11n-world model yet
-    # Training from a pretrained model. Eval is included at the final stage of training.
-    # Use dota8.yaml which has fewer categories to reduce the inference time of CLIP model
-    model.train(
-        data="dota8.yaml",
-        epochs=1,
-        imgsz=32,
-        cache="disk",
-        close_mosaic=1,
-    )
-
-    # test WorWorldTrainerFromScratch
-    from ultralytics.models.yolo.world.train_world import WorldTrainerFromScratch
-
-    model = YOLO("yolov8s-worldv2.yaml")  # no YOLO11n-world model yet
-    model.train(
-        data={"train": {"yolo_data": ["dota8.yaml"]}, "val": {"yolo_data": ["dota8.yaml"]}},
-        epochs=1,
-        imgsz=32,
-        cache="disk",
-        close_mosaic=1,
-        trainer=WorldTrainerFromScratch,
-    )
-
-
 def test_yolov10():
     """Test YOLOv10 model training, validation, and prediction steps with minimal configurations."""
     model = YOLO("yolov10n.yaml")

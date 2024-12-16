@@ -152,10 +152,9 @@ class BasePredictor:
         Returns:
             (list): A list of transformed images.
         """
-        same_shapes = len({x.shape for x in im}) == 1
         letterbox = LetterBox(
             self.imgsz,
-            auto=same_shapes and (self.model.pt or getattr(self.model, "dynamic", False)),
+            auto=False,
             stride=self.model.stride,
         )
         return [letterbox(image=x) for x in im]

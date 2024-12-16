@@ -68,6 +68,8 @@ class DetectionValidator(BaseValidator):
     def init_metrics(self, model):
         """Initialize evaluation metrics for YOLO."""
         val = self.data.get(self.args.split, "")  # validation path
+        val = val[0] if isinstance(val, list) else val
+        
         self.is_coco = (
             isinstance(val, str)
             and "coco" in val
@@ -75,7 +77,7 @@ class DetectionValidator(BaseValidator):
         )  # is COCO
         self.is_lvis = isinstance(val, str) and "lvis" in val and not self.is_coco  # is LVIS
         self.class_map = converter.coco80_to_coco91_class() if self.is_coco else list(range(len(model.names)))
-        self.args.save_json |= self.args.val and (self.is_coco or self.is_lvis) and not self.training  # run final val
+        self.args.save_json |= self.args.val and (self.is_coco or self.is_lvis)  # run final val
         self.names = model.names
         self.nc = len(model.names)
         self.metrics.names = self.names
@@ -236,7 +238,7 @@ class DetectionValidator(BaseValidator):
             mode (str): `train` mode or `val` mode, users are able to customize different augmentations for each mode.
             batch (int, optional): Size of batches, this is for `rect`. Defaults to None.
         """
-        return build_yolo_dataset(self.args, img_path, batch, self.data, mode=mode, stride=self.stride)
+        return build_yolo_dataset(self.args, img_path, batch, self.data, mode=mode, stride=self.stride, load_vp=False)
 
     def get_dataloader(self, dataset_path, batch_size):
         """Construct and return dataloader."""
@@ -299,10 +301,15 @@ class DetectionValidator(BaseValidator):
         """Evaluates YOLO output in JSON format and returns performance statistics."""
         if self.args.save_json and (self.is_coco or self.is_lvis) and len(self.jdict):
             pred_json = self.save_dir / "predictions.json"  # predictions
+            
+            val = self.data[self.args.split]
+            val = val[0] if isinstance(val, list) else val
+            is_lvis_minival = 'minival' in val
+
             anno_json = (
                 self.data["path"]
                 / "annotations"
-                / ("instances_val2017.json" if self.is_coco else f"lvis_v1_{self.args.split}.json")
+                / ("instances_val2017.json" if self.is_coco else f"lvis_v1_{'minival' if is_lvis_minival else 'val'}{'_sc' if self.args.single_cls else ''}.json")
             )  # annotations
             pkg = "pycocotools" if self.is_coco else "lvis"
             LOGGER.info(f"\nEvaluating {pkg} mAP using {pred_json} and {anno_json}...")
@@ -331,8 +338,13 @@ class DetectionValidator(BaseValidator):
                     val.print_results()  # explicitly call print_results
                 # update mAP50-95 and mAP50
                 stats[self.metrics.keys[-1]], stats[self.metrics.keys[-2]] = (
-                    val.stats[:2] if self.is_coco else [val.results["AP50"], val.results["AP"]]
+                    val.stats[:2] if self.is_coco else [val.results["AP"], val.results["AP50"]]
                 )
+                if self.is_lvis:
+                    stats['metrics/APr(B)'] = val.results["APr"]
+                    stats['metrics/APc(B)'] = val.results["APc"]
+                    stats['metrics/APf(B)'] = val.results["APf"]
+                    stats['fitness'] = val.results["AP"]
             except Exception as e:
                 LOGGER.warning(f"{pkg} unable to run: {e}")
         return stats
