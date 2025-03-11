@@ -234,7 +234,7 @@ with gradio_app:
     )
     gr.Markdown(
         """
-        If desired objects are not identified, pleaset set a **smaller** confidence threshold, eg., for visual prompts with handcrafted shape or cross-image prompts.
+        If desired objects are not identified, pleaset set a **smaller** confidence threshold, e.g., for visual prompts with handcrafted shape or cross-image prompts.
         """
     )
     with gr.Row():
