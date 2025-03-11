@@ -5,6 +5,7 @@ from ultralytics.models.yolo.yoloe.predict_vp import YOLOEVPSegPredictor
 model = YOLOE("pretrain/yoloe-v8l-seg.pt")
 
 # Handcrafted shape can also be passed, please refer to app.py
+# Multiple boxes or handcrafted shapes can also be passed as visual prompt in an image
 visuals = dict(
     bboxes=np.array(
         [
