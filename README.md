@@ -118,6 +118,7 @@ pip install -e CLIP
 ```
 
 ## Demo
+If desired objects are not identified, pleaset set a **smaller** confidence threshold, eg., for visual prompts with handcrafted shape or cross-image prompts.
 ```bash
 # Optional for mirror: export HF_ENDPOINT=https://hf-mirror.com
 pip install gradio==4.42.0 gradio_image_prompter==0.1.0 fastapi==0.112.2

@@ -34,7 +34,7 @@ def yoloe_inference(image, prompts, target_image, model_id, image_size, conf_thr
         )
         if target_image:
             model.predict(source=image, imgsz=image_size, conf=conf_thresh, iou=iou_thresh, return_vpe=True, **kwargs)
-            model.set_classes(["target"], model.predictor.vpe)
+            model.set_classes(["object0"], model.predictor.vpe)
             model.predictor = None  # unset VPPredictor
             image = target_image
             kwargs = {}
@@ -230,6 +230,11 @@ with gradio_app:
     gr.Markdown(
         """
         We introduce **YOLOE(ye)**, a highly **efficient**, **unified**, and **open** object detection and segmentation model, like human eye, under different prompt mechanisms, like *texts*, *visual inputs*, and *prompt-free paradigm*.
+        """
+    )
+    gr.Markdown(
+        """
+        If desired objects are not identified, pleaset set a **smaller** confidence threshold, eg., for visual prompts with handcrafted shape or cross-image prompts.
         """
     )
     with gr.Row():
