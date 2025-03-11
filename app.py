@@ -224,7 +224,7 @@ with gradio_app:
     gr.HTML(
         """
         <h3 style='text-align: center'>
-        <a href='' target='_blank'>arXiv</a> | <a href='https://github.com/THU-MIG/yoloe' target='_blank'>github</a>
+        <a href='https://arxiv.org/abs/2503.07465' target='_blank'>arXiv</a> | <a href='https://github.com/THU-MIG/yoloe' target='_blank'>github</a>
         </h3>
         """)
     gr.Markdown(
