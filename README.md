@@ -231,6 +231,8 @@ python train_seg.py
 python tools/convert_segm2det.py
 # Then, train the SAVPE module
 python train_vp.py
+# After training, please use tools/get_vp_segm.py to add the segmentation head
+# python tools/get_vp_segm.py
 ```
 
 ### Prompt free
@@ -241,6 +243,8 @@ python tools/generate_lvis_sc.py
 # Similar to visual prompt, because only the specialized prompt embedding is trained, we can adopt the detection pipleline with less training time
 python tools/convert_segm2det.py
 python train_pe_free.py
+# After training, please use tools/get_pf_free_segm.py to add the segmentation head
+# python tools/get_pf_free_segm.py
 ```
 
 ## Transferring
