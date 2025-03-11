@@ -237,6 +237,11 @@ with gradio_app:
         If desired objects are not identified, pleaset set a **smaller** confidence threshold, e.g., for visual prompts with handcrafted shape or cross-image prompts.
         """
     )
+    gr.Markdown(
+        """
+        Drawing **multiple** boxes or handcrafted shapes as visual prompt in an image is also supported.
+        """
+    )
     with gr.Row():
         with gr.Column():
             app()
