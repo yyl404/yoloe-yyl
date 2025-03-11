@@ -1,4 +1,4 @@
-# [YOLOE: Real-Time Seeing Anything]()
+# [YOLOE: Real-Time Seeing Anything](https://arxiv.org/abs/2503.07465)
 
 Official PyTorch implementation of **YOLOE**.
 
@@ -7,7 +7,7 @@ Official PyTorch implementation of **YOLOE**.
   Comparison of performance, training cost, and inference efficiency between YOLOE (Ours) and YOLO-Worldv2 in terms of open text prompts.
 </p>
 
-[YOLOE: Real-Time Seeing Anything]().\
+[YOLOE: Real-Time Seeing Anything](https://arxiv.org/abs/2503.07465).\
 Ao Wang*, Lihao Liu*, Hui Chen, Zijia Lin, Jungong Han, and Guiguang Ding\
 [![arXiv](https://img.shields.io/badge/arXiv-2503.07465-b31b1b.svg)](https://arxiv.org/abs/2503.07465) [![Hugging Face Models](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Models-blue)](https://huggingface.co/jameslahm/yoloe/tree/main) [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/jameslahm/yoloe)
 
