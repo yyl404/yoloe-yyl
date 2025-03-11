@@ -196,9 +196,10 @@ def app():
                     }
                 elif visual_prompt_type == "masks":
                     image, masks = mask_image["background"], mask_image["layers"][0]
-                    image = image.convert("RGB")
-                    masks = np.array(masks.convert("1"))
+                    # image = image.convert("RGB")
+                    masks = np.array(masks.convert("L"))
                     masks = binary_fill_holes(masks).astype(np.uint8)
+                    masks[masks > 0] = 1
                     prompts = {
                         "masks": masks[None]
                     }

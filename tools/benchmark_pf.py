@@ -8,7 +8,7 @@ from ultralytics import YOLOE
 from ultralytics.utils import ops
 from ultralytics.data.utils import yaml_load
 from ultralytics.data.augment import LetterBox, ToTensor
-
+from ultralytics.nn.modules.head import YOLOEDetect
 
 @torch.inference_mode()
 def measure_inference_time(model, dataset, device="cuda"):
@@ -75,6 +75,8 @@ def get_vl_pf_model(model_prefix):
     model.model.model[-1].is_fused = True
     model.model.model[-1].conf = 0.001
     model.model.model[-1].max_det = 1000
+    # For detection evaluation
+    model.model.model[-1].__class__ = YOLOEDetect
     model.fuse()
     return model.model
 
