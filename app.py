@@ -193,8 +193,10 @@ def app():
                     if len(points) == 0:
                         gr.Warning("No boxes are provided. No image output.", visible=True)
                         return gr.update(value=None)
+                    bboxes = np.array([p[[0, 1, 3, 4]] for p in points if p[2] == 2])
                     prompts = {
-                        "bboxes": np.array([p[[0, 1, 3, 4]] for p in points if p[2] == 2]),
+                        "bboxes": bboxes,
+                        "cls": np.array([0] * len(bboxes))
                     }
                 elif visual_prompt_type == "masks":
                     image, masks = mask_image["background"], mask_image["layers"][0]
@@ -206,7 +208,8 @@ def app():
                         gr.Warning("No masks are provided. No image output.", visible=True)
                         return gr.update(value=None)
                     prompts = {
-                        "masks": masks[None]
+                        "masks": masks[None],
+                        "cls": np.array([0])
                     }
             return yoloe_inference(image, prompts, target_image, model_id, image_size, conf_thresh, iou_thresh, prompt_type)
 

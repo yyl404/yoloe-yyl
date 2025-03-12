@@ -42,7 +42,7 @@ class YOLOEVPPredictorMixin:
                 instances=Instances(bboxes=self.prompts["bboxes"], 
                                     segments=np.zeros((0, 1000, 2), dtype=np.float32), 
                                     bbox_format="xyxy", normalized=False),
-                cls=torch.zeros((len(self.prompts["bboxes"]), 1))
+                cls=torch.tensor(self.prompts["cls"]).unsqueeze(-1)
             )
             
             labels = letterbox(labels)
@@ -65,19 +65,20 @@ class YOLOEVPPredictorMixin:
             labels = dict(
                 img=img,
                 masks=masks,
-                cls=torch.zeros((len(masks), 1))
+                cls=torch.tensor(self.prompts["cls"]).unsqueeze(-1)
             )
         else:
             raise ValueError("Please provide valid bboxes or masks")
 
         labels["img"] = labels["img"].transpose(2, 0, 1)
         
-        load_vp = LoadVisualPrompt(nc=1, augment=False)
+        load_vp = LoadVisualPrompt(nc=len(self.prompts["cls"]), augment=False)
         labels = load_vp(labels)
         
+        cls = np.sort(self.prompts["cls"])
         self.prompts = labels["visuals"].unsqueeze(0).to(self.device)
         self.model.model[-1].nc = self.prompts.shape[1]
-        self.model.names = [f"object{i}" for i in range(self.prompts.shape[1])]
+        self.model.names = [f"object{cls[i]}" for i in range(self.prompts.shape[1])]
         
         return [labels["img"].transpose(1, 2, 0)]
 

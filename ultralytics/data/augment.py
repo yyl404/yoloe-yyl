@@ -2167,7 +2167,8 @@ class LoadVisualPrompt:
         if len(cls_unique) != 0 and self.augment:
             assert(len(cls_unique) == cls_unique[-1] + 1)
         elif not self.augment:
-            assert(len(cls_unique) == 1)
+            # assert(len(cls_unique) == 1)
+            pass
         visuals = torch.zeros(len(cls_unique), *masksz)
         for idx, mask in zip(inverse_indices, masks):
             visuals[idx] = torch.logical_or(visuals[idx], mask)
