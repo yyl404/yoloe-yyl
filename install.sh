@@ -5,9 +5,6 @@ conda create -n yoloe python=3.10 -y
 conda activate yoloe
 
 pip install -r requirements.txt
-pip install -e .
-pip install -e CLIP
-pip install -e lvis-api
 
 # Generate segmentation data
 # python tools/generate_sam_masks.py --img-path ../datasets/Objects365v1/images/train --json-path ../datasets/Objects365v1/annotations/objects365_train.json --batch

@@ -110,11 +110,13 @@ Object detection and segmentation are widely employed in computer vision applica
 conda create -n yoloe python=3.10 -y
 conda activate yoloe
 
+# If you clone this repo, please use this
 pip install -r requirements.txt
-pip install -e .
-pip install -e lvis-api
-pip install -e ml-mobileclip
-pip install -e CLIP
+# Or you can also directly install the repo by this
+pip install git+https://github.com/THU-MIG/yoloe.git#subdirectory=third_party/CLIP
+pip install git+https://github.com/THU-MIG/yoloe.git#subdirectory=third_party/ml-mobileclip
+pip install git+https://github.com/THU-MIG/yoloe.git#subdirectory=third_party/lvis-api
+pip install git+https://github.com/THU-MIG/yoloe.git
 
 wget https://docs-assets.developer.apple.com/ml-research/datasets/mobileclip/mobileclip_blt.pt
 ```
@@ -193,8 +195,8 @@ For annotations, you can directly use our preprocessed ones or use the following
 # Generate segmentation data
 conda create -n sam2 python==3.10.16
 conda activate sam2
-pip install -r sam2/requirements.txt
-pip install -e sam2/
+pip install -r third_party/sam2/requirements.txt
+pip install -e third_party/sam2/
 
 python tools/generate_sam_masks.py --img-path ../datasets/Objects365v1/images/train --json-path ../datasets/Objects365v1/annotations/objects365_train.json --batch
 python tools/generate_sam_masks.py --img-path ../datasets/flickr/full_images/ --json-path ../datasets/flickr/annotations/final_flickr_separateGT_train.json

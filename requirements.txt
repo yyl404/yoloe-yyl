@@ -109,6 +109,6 @@ wcwidth==0.2.13
 yapf==0.43.0
 fastapi==0.112.2
 -e .
--e lvis-api
--e ml-mobileclip
--e CLIP
+-e third_party/lvis-api
+-e third_party/ml-mobileclip
+-e third_party/CLIP
