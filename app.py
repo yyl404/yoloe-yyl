@@ -350,7 +350,7 @@ with gradio_app:
     )
     gr.Markdown(
         """
-        Drawing **multiple** boxes or handcrafted shapes as visual prompt in an image is also supported.
+        Drawing **multiple** boxes or handcrafted shapes as visual prompt in an image is also supported, which leads to more accurate prompt.
         """
     )
     with gr.Row():
