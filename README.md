@@ -115,6 +115,8 @@ pip install -e .
 pip install -e lvis-api
 pip install -e ml-mobileclip
 pip install -e CLIP
+
+wget https://docs-assets.developer.apple.com/ml-research/datasets/mobileclip/mobileclip_blt.pt
 ```
 
 ## Demo
