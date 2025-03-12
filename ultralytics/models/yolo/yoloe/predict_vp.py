@@ -75,7 +75,7 @@ class YOLOEVPPredictorMixin:
         load_vp = LoadVisualPrompt(nc=len(self.prompts["cls"]), augment=False)
         labels = load_vp(labels)
         
-        cls = np.sort(self.prompts["cls"])
+        cls = np.unique(self.prompts["cls"])
         self.prompts = labels["visuals"].unsqueeze(0).to(self.device)
         self.model.model[-1].nc = self.prompts.shape[1]
         self.model.names = [f"object{cls[i]}" for i in range(self.prompts.shape[1])]
