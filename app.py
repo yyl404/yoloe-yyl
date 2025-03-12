@@ -9,12 +9,9 @@ from gradio_image_prompter import ImagePrompter
 from huggingface_hub import hf_hub_download
 
 def init_model(model_id, is_pf=False):
-    if not is_pf:
-        path = hf_hub_download(repo_id="jameslahm/yoloe", filename=f"{model_id}-seg.pt")
-        model = YOLOE(path)
-    else:
-        path = hf_hub_download(repo_id="jameslahm/yoloe", filename=f"{model_id}-seg-pf.pt")
-        model = YOLOE(path)
+    filename = f"{model_id}-seg.pt" if not is_pf else f"{model_id}-seg-pf.pt"
+    path = hf_hub_download(repo_id="jameslahm/yoloe", filename=filename)
+    model = YOLOE(path)
     model.eval()
     model.to("cuda" if torch.cuda.is_available() else "cpu")
     return model
@@ -70,13 +67,13 @@ def app():
                 with gr.Tab("Visual") as visual_tab:
                     with gr.Row():
                         visual_prompt_type = gr.Dropdown(choices=["bboxes", "masks"], value="bboxes", label="Visual Type", interactive=True)
-                        visual_usage_type = gr.Radio(choices=["Intra-Image", "Inter-Image"], value="Intra-Image", label="Intra/Inter Image", interactive=True)
+                        visual_usage_type = gr.Radio(choices=["Intra-Image", "Cross-Image"], value="Intra-Image", label="Intra/Cross Image", interactive=True)
                 
                 with gr.Tab("Prompt-Free") as prompt_free_tab:
                     gr.HTML(
                         """
                         <p style='text-align: center'>
-                        Prompt-Free Mode is On
+                        <b>Prompt-Free Mode is On</b>
                         </p>
                     """, show_label=False)
 
@@ -121,11 +118,10 @@ def app():
             return gr.update(value="Text"), gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
 
         def update_visual_image_visiblity(visual_prompt_type, visual_usage_type):
-            use_target = gr.update(visible=True) if visual_usage_type == "Inter-Image" else gr.update(visible=False)
             if visual_prompt_type == "bboxes":
-                return gr.update(value="Visual"), gr.update(visible=False), gr.update(visible=True), gr.update(visible=False), use_target
+                return gr.update(value="Visual"), gr.update(visible=False), gr.update(visible=True), gr.update(visible=False), gr.update(visible=(visual_usage_type == "Cross-Image"))
             elif visual_prompt_type == "masks":
-                return gr.update(value="Visual"), gr.update(visible=False), gr.update(visible=False), gr.update(visible=True), use_target
+                return gr.update(value="Visual"), gr.update(visible=False), gr.update(visible=False), gr.update(visible=True), gr.update(visible=(visual_usage_type == "Cross-Image"))
 
         def update_pf_image_visibility():
             return gr.update(value="Prompt-free"), gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
@@ -157,10 +153,10 @@ def app():
 
         def update_visual_usage_type(visual_usage_type):
             if visual_usage_type == "Intra-Image":
-                return gr.update(visible=False, value=None)
-            if visual_usage_type == "Inter-Image":
-                return gr.update(visible=True, value=None)
-            return gr.update(visible=False, value=None)
+                return gr.update(visible=False)
+            if visual_usage_type == "Cross-Image":
+                return gr.update(visible=True)
+            return gr.update(visible=False)
 
         visual_prompt_type.change(
             fn=update_visual_prompt_type,
@@ -174,9 +170,10 @@ def app():
             outputs=[target_image]
         )
 
-        def run_inference(raw_image, box_image, mask_image, target_image, texts, model_id, image_size, conf_thresh, iou_thresh, prompt_type, visual_prompt_type):
+        def run_inference(raw_image, box_image, mask_image, target_image, texts, model_id, image_size, conf_thresh, iou_thresh, prompt_type, visual_prompt_type, visual_usage_type):
             # add text/built-in prompts
             if prompt_type == "Text" or prompt_type == "Prompt-free":
+                target_image = None
                 image = raw_image
                 if prompt_type == "Prompt-free":
                     with open('tools/ram_tag_list.txt', 'r') as f:
@@ -188,9 +185,14 @@ def app():
                 }
             # add visual prompt
             elif prompt_type == "Visual":
+                if visual_usage_type != "Cross-Image":
+                    target_image = None
                 if visual_prompt_type == "bboxes":
                     image, points = box_image["image"], box_image["points"]
                     points = np.array(points)
+                    if len(points) == 0:
+                        gr.Warning("No boxes are provided. No image output.", visible=True)
+                        return gr.update(value=None)
                     prompts = {
                         "bboxes": np.array([p[[0, 1, 3, 4]] for p in points if p[2] == 2]),
                     }
@@ -200,6 +202,9 @@ def app():
                     masks = np.array(masks.convert("L"))
                     masks = binary_fill_holes(masks).astype(np.uint8)
                     masks[masks > 0] = 1
+                    if masks.sum() == 0:
+                        gr.Warning("No masks are provided. No image output.", visible=True)
+                        return gr.update(value=None)
                     prompts = {
                         "masks": masks[None]
                     }
@@ -207,8 +212,114 @@ def app():
 
         yoloe_infer.click(
             fn=run_inference,
-            inputs=[raw_image, box_image, mask_image, target_image, texts, model_id, image_size, conf_thresh, iou_thresh, prompt_type, visual_prompt_type],
+            inputs=[raw_image, box_image, mask_image, target_image, texts, model_id, image_size, conf_thresh, iou_thresh, prompt_type, visual_prompt_type, visual_usage_type],
             outputs=[output_image],
+        )
+
+        ###################### Examples ##########################
+        text_examples = gr.Examples(
+            examples=[[
+                "ultralytics/assets/bus.jpg",
+                "person,bus",
+                "yoloe-v8l",
+                640,
+                0.25,
+                0.7]], 
+            inputs=[raw_image, texts, model_id, image_size, conf_thresh, iou_thresh], 
+            visible=True, cache_examples=False, label="Text Prompt Examples")
+
+        box_examples = gr.Examples(
+            examples=[[
+                {"image": "ultralytics/assets/bus_box.jpg", "points": [[235, 408, 2, 342, 863, 3]]},
+                "ultralytics/assets/zidane.jpg",
+                "yoloe-v8l",
+                640,
+                0.2,
+                0.7,
+            ]], 
+            inputs=[box_image, target_image, model_id, image_size, conf_thresh, iou_thresh], 
+            visible=False, cache_examples=False, label="Box Visual Prompt Examples")
+
+        mask_examples = gr.Examples(
+            examples=[[
+                {"background": "ultralytics/assets/bus.jpg", "layers": ["ultralytics/assets/bus_mask.png"], "composite": "ultralytics/assets/bus_composite.jpg"},
+                "ultralytics/assets/zidane.jpg",
+                "yoloe-v8l",
+                640,
+                0.15,
+                0.7,
+            ]],
+            inputs=[mask_image, target_image, model_id, image_size, conf_thresh, iou_thresh],
+            visible=False, cache_examples=False, label="Mask Visual Prompt Examples")
+
+        pf_examples = gr.Examples(
+            examples=[[
+                "ultralytics/assets/bus.jpg",
+                "yoloe-v8l",
+                640,
+                0.25,
+                0.7,
+            ]], 
+            inputs=[raw_image, model_id, image_size, conf_thresh, iou_thresh], 
+            visible=False, cache_examples=False, label="Prompt-free Examples")
+        
+        # Components update
+        def load_box_example(visual_usage_type):
+            return (gr.update(visible=True, value={"image": "ultralytics/assets/bus_box.jpg", "points": [[235, 408, 2, 342, 863, 3]]}),
+                    gr.update(visible=(visual_usage_type=="Cross-Image")))
+        
+        def load_mask_example(visual_usage_type):
+            return gr.update(visible=True), gr.update(visible=(visual_usage_type=="Cross-Image"))
+            
+        box_examples.load_input_event.then(
+            fn=load_box_example,
+            inputs=visual_usage_type,
+            outputs=[box_image, target_image]
+        )
+        
+        mask_examples.load_input_event.then(
+            fn=load_mask_example,
+            inputs=visual_usage_type,
+            outputs=[mask_image, target_image]
+        )
+
+        # Examples update
+        def update_text_examples():
+            return gr.Dataset(visible=True), gr.Dataset(visible=False), gr.Dataset(visible=False), gr.Dataset(visible=False)
+
+        def update_pf_examples():
+            return gr.Dataset(visible=False), gr.Dataset(visible=False), gr.Dataset(visible=False), gr.Dataset(visible=True)
+
+        def update_visual_examples(visual_prompt_type):
+            if visual_prompt_type == "bboxes":
+                return gr.Dataset(visible=False), gr.Dataset(visible=True), gr.Dataset(visible=False), gr.Dataset(visible=False),
+            elif visual_prompt_type == "masks":
+                return gr.Dataset(visible=False), gr.Dataset(visible=False), gr.Dataset(visible=True), gr.Dataset(visible=False),
+
+        text_tab.select(
+            fn=update_text_examples,
+            inputs=None,
+            outputs=[text_examples.dataset, box_examples.dataset, mask_examples.dataset, pf_examples.dataset]
+        )
+        visual_tab.select(
+            fn=update_visual_examples,
+            inputs=[visual_prompt_type],
+            outputs=[text_examples.dataset, box_examples.dataset, mask_examples.dataset, pf_examples.dataset]
+        )
+        prompt_free_tab.select(
+            fn=update_pf_examples,
+            inputs=None,
+            outputs=[text_examples.dataset, box_examples.dataset, mask_examples.dataset, pf_examples.dataset]
+        )
+        visual_prompt_type.change(
+            fn=update_visual_examples,
+            inputs=[visual_prompt_type],
+            outputs=[text_examples.dataset, box_examples.dataset, mask_examples.dataset, pf_examples.dataset]
+        )
+        visual_usage_type.change(
+            fn=update_visual_examples,
+            inputs=[visual_prompt_type],
+            outputs=[text_examples.dataset, box_examples.dataset, mask_examples.dataset, pf_examples.dataset]
         )
 
 

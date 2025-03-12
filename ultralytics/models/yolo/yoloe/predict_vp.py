@@ -52,7 +52,7 @@ class YOLOEVPPredictorMixin:
             instances.normalize(w, h)
             instances.convert_bbox(format="xywh")
             labels["bboxes"] = torch.from_numpy(instances.bboxes)
-        else:
+        elif "masks" in self.prompts:
             masks = self.prompts["masks"]
 
             img = letterbox(image=im[0])
@@ -67,6 +67,8 @@ class YOLOEVPPredictorMixin:
                 masks=masks,
                 cls=torch.zeros((len(masks), 1))
             )
+        else:
+            raise ValueError("Please provide valid bboxes or masks")
 
         labels["img"] = labels["img"].transpose(2, 0, 1)
         
