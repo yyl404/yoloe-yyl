@@ -141,17 +141,21 @@ huggingface-cli download jameslahm/yoloe yoloe-v8l-seg.pt --local-dir pretrain
 
 ### Text prompt
 ```bash
-python predict.py
+python predict_text_prompt.py \
+    --source ultralytics/assets/bus.jpg \
+    --checkpoint pretrain/yoloe-v8l-seg.pt \
+    --names person dog cat \
+    --device cuda:0
 ```
 
 ### Visual prompt
 ```bash
-python predict_vp.py
+python predict_visual_prompt.py
 ```
 
 ### Prompt free
 ```bash
-python predict_pf.py
+python predict_prompt_free.py
 ```
 
 ## Transferring
