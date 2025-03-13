@@ -276,7 +276,7 @@ python train_pe_free.py
 ```
 
 ## Export
-After re-parameterization, YOLOE-v8 / YOLOE-11 can be exported into the identical format as YOLOv8 / YOLO11.
+After re-parameterization, YOLOE-v8 / YOLOE-11 can be exported into the identical format as YOLOv8 / YOLO11, with zero overhead for inference.
 ```bash
 pip install onnx coremltools onnxslim
 python export.py
