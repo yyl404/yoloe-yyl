@@ -12,7 +12,7 @@ Ao Wang*, Lihao Liu*, Hui Chen, Zijia Lin, Jungong Han, and Guiguang Ding\
 [![arXiv](https://img.shields.io/badge/arXiv-2503.07465-b31b1b.svg)](https://arxiv.org/abs/2503.07465) [![Hugging Face Models](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Models-blue)](https://huggingface.co/jameslahm/yoloe/tree/main) [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/jameslahm/yoloe) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/roboflow-ai/notebooks/blob/main/notebooks/zero-shot-object-detection-and-segmentation-with-yoloe.ipynb)
 
 
-We introduce **YOLOE(ye)**, a highly **efficient**, **unified**, and **open** object detection and segmentation model, like human eye, under different prompt mechanisms, like *texts*, *visual inputs*, and *prompt-free paradigm*.
+We introduce **YOLOE(ye)**, a highly **efficient**, **unified**, and **open** object detection and segmentation model, like human eye, under different prompt mechanisms, like *texts*, *visual inputs*, and *prompt-free paradigm*, with **zero inference and transferring overhead** compared with closed-set YOLOs.
 
 <!-- <p align="center">
   <img src="figures/pipeline.svg" width=96%> <br>
@@ -154,6 +154,22 @@ python predict_vp.py
 python predict_pf.py
 ```
 
+## Transferring
+After pretraining, YOLOE-v8 / YOLOE-11 can be re-parameterized into the same architecture as YOLOv8 / YOLO11, with **zero overhead** for transferring.
+
+### Linear probing
+Only the last conv, ie., the prompt embedding, is trainable.
+```bash
+python train_pe.py
+```
+
+### Full tuning
+All parameters are trainable, for better performance.
+```bash
+# For models with s scale, please change the epochs to 160 for longer training
+python train_pe_all.py
+```
+
 ## Validation
 
 ### Data
@@ -257,22 +273,6 @@ python tools/convert_segm2det.py
 python train_pe_free.py
 # After training, please use tools/get_pf_free_segm.py to add the segmentation head
 # python tools/get_pf_free_segm.py
-```
-
-## Transferring
-After pretraining, YOLOE-v8 / YOLOE-11 can be re-parameterized into the same architecture as YOLOv8 / YOLO11, with **zero overhead** for transferring.
-
-### Linear probing
-Only the last conv, ie., the prompt embedding, is trainable.
-```bash
-python train_pe.py
-```
-
-### Full tuning
-All parameters are trainable, for better performance.
-```bash
-# For models with s scale, please change the epochs to 160 for longer training
-python train_pe_all.py
 ```
 
 ## Export
