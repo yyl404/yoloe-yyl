@@ -155,7 +155,7 @@ python predict_pf.py
 ```
 
 ## Transferring
-After pretraining, YOLOE-v8 / YOLOE-11 can be re-parameterized into the same architecture as YOLOv8 / YOLO11, with **zero overhead** for transferring.
+After pretraining, YOLOE-v8 / YOLOE-11 can be re-parameterized into the same architecture as YOLOv8 / YOLO11, with **zero overhead for transferring**.
 
 ### Linear probing
 Only the last conv, ie., the prompt embedding, is trainable.
@@ -276,7 +276,7 @@ python train_pe_free.py
 ```
 
 ## Export
-After re-parameterization, YOLOE-v8 / YOLOE-11 can be exported into the identical format as YOLOv8 / YOLO11, with zero overhead for inference.
+After re-parameterization, YOLOE-v8 / YOLOE-11 can be exported into the identical format as YOLOv8 / YOLO11, with **zero overhead for inference**.
 ```bash
 pip install onnx coremltools onnxslim
 python export.py
