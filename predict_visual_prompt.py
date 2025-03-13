@@ -1,108 +1,37 @@
-import argparse
-import os
-import numpy as np
-from PIL import Image
-import supervision as sv
 from ultralytics import YOLOE
+import numpy as np
 from ultralytics.models.yolo.yoloe.predict_vp import YOLOEVPSegPredictor
 
+model = YOLOE("pretrain/yoloe-v8l-seg.pt")
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--source",
-        type=str,
-        required=True,
-        help="Path to the input image"
+# Handcrafted shape can also be passed, please refer to app.py
+# Multiple boxes or handcrafted shapes can also be passed as visual prompt in an image
+visuals = dict(
+    bboxes=np.array(
+        [
+            [221.52, 405.8, 344.98, 857.54],  # For person
+            [120, 425, 160, 445],  # For glasses
+        ],
+
+    ),
+    cls=np.array(
+        [
+            0,  # For person
+            1,  # For glasses
+        ]
     )
-    parser.add_argument(
-        "--checkpoint",
-        type=str,
-        default="yoloe-v8l-seg.pt",
-        help="Path to the model checkpoint"
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="cpu",
-        help="Device to run inference on"
-    )
-    parser.add_argument(
-        "--output",
-        type=str,
-        help="Path to save the annotated image"
-    )
-    parser.add_argument(
-        "--bboxes",
-        nargs="+",
-        type=float,
-        help="Bounding box coordinates as x1 y1 x2 y2 (multiple boxes in sequence)"
-    )
-    parser.add_argument(
-        "--cls",
-        nargs="+",
-        type=int,
-        help="Class IDs corresponding to each bounding box"
-    )
-    parser.add_argument(
-        "--names",
-        nargs="+",
-        help="Class names corresponding to each class ID"
-    )
-    return parser.parse_args()
+)
 
+source_image = 'ultralytics/assets/bus.jpg'
 
-def main():
-    args = parse_args()
+model.predict(source_image, save=True, prompts=visuals, predictor=YOLOEVPSegPredictor)
 
-    if not args.output:
-        base, ext = os.path.splitext(args.source)
-        args.output = f"{base}-output{ext}"
-
-    image = Image.open(args.source).convert("RGB")
-
-    model = YOLOE(args.checkpoint)
-    model.to(args.device)
-
-    bboxes_array = np.array(args.bboxes, dtype=float).reshape(-1, 4)
-    cls_array = np.array(args.cls, dtype=int)
-    visuals = dict(bboxes=bboxes_array, cls=cls_array)
-
-    results = model.predict(
-        image,
-        prompts=visuals,
-        predictor=YOLOEVPSegPredictor,
-        verbose=False
-    )
-    model.set_classes(args.names, model.predictor.vpe)
-    detections = sv.Detections.from_ultralytics(results[0])
-
-    resolution_wh = image.size
-    thickness = sv.calculate_optimal_line_thickness(resolution_wh=resolution_wh)
-    text_scale = sv.calculate_optimal_text_scale(resolution_wh=resolution_wh)
-
-    labels = [
-        f"{class_name} {confidence:.2f}"
-        for class_name, confidence in zip(detections["class_name"], detections.confidence)
-    ]
-
-    annotated_image = image.copy()
-    annotated_image = sv.MaskAnnotator(
-        color_lookup=sv.ColorLookup.INDEX,
-        opacity=0.4
-    ).annotate(scene=annotated_image, detections=detections)
-    annotated_image = sv.BoxAnnotator(
-        color_lookup=sv.ColorLookup.INDEX,
-        thickness=thickness
-    ).annotate(scene=annotated_image, detections=detections)
-    annotated_image = sv.LabelAnnotator(
-        color_lookup=sv.ColorLookup.INDEX,
-        text_scale=text_scale,
-        smart_position=True
-    ).annotate(scene=annotated_image, detections=detections, labels=labels)
-
-    annotated_image.save(args.output)
-    print(f"Annotated image saved to: {args.output}")
-
-if __name__ == "__main__":
-    main()
+# Prompts in different images can be passed
+# Please set a smaller conf for cross-image prompts
+# model.predictor = None  # remove VPPredictor
+target_image = 'ultralytics/assets/zidane.jpg'
+model.predict(source_image, prompts=visuals, predictor=YOLOEVPSegPredictor,
+              return_vpe=True)
+model.set_classes(["object0", "object1"], model.predictor.vpe)
+model.predictor = None  # remove VPPredictor
+model.predict(target_image, save=True)
