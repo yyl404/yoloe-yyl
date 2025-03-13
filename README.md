@@ -237,7 +237,7 @@ python train_seg.py
 
 ### Visual prompt
 ```bash
-# For visual prompt, because only SAVPE is trained, we can adopt the detection pipleline with less training time
+# For visual prompt, because only SAVPE is trained, we can adopt the detection pipeline with less training time
 
 # First, obtain the detection model
 python tools/convert_segm2det.py
@@ -252,7 +252,7 @@ python train_vp.py
 # Generate LVIS with single class for evaluation during training
 python tools/generate_lvis_sc.py
 
-# Similar to visual prompt, because only the specialized prompt embedding is trained, we can adopt the detection pipleline with less training time
+# Similar to visual prompt, because only the specialized prompt embedding is trained, we can adopt the detection pipeline with less training time
 python tools/convert_segm2det.py
 python train_pe_free.py
 # After training, please use tools/get_pf_free_segm.py to add the segmentation head
