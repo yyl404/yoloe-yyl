@@ -58,16 +58,19 @@ def yoloe_inference(image, prompts, target_image, model_id, image_size, conf_thr
     ]
 
     annotated_image = image.copy()
-    annotated_image = sv.MaskAnnotator(color_lookup=sv.ColorLookup.INDEX,
-                                       opacity=0.4).annotate(
-        scene=annotated_image, detections=detections)
-    annotated_image = sv.BoxAnnotator(color_lookup=sv.ColorLookup.INDEX,
-                                      thickness=thickness).annotate(
-        scene=annotated_image, detections=detections)
-    annotated_image = sv.LabelAnnotator(color_lookup=sv.ColorLookup.INDEX,
-                                        text_scale=text_scale,
-                                        smart_position=True).annotate(
-        scene=annotated_image, detections=detections, labels=labels)
+    annotated_image = sv.MaskAnnotator(
+        color_lookup=sv.ColorLookup.INDEX,
+        opacity=0.4
+    ).annotate(scene=annotated_image, detections=detections)
+    annotated_image = sv.BoxAnnotator(
+        color_lookup=sv.ColorLookup.INDEX,
+        thickness=thickness
+    ).annotate(scene=annotated_image, detections=detections)
+    annotated_image = sv.LabelAnnotator(
+        color_lookup=sv.ColorLookup.INDEX,
+        text_scale=text_scale,
+        smart_position=True
+    ).annotate(scene=annotated_image, detections=detections, labels=labels)
 
     return annotated_image
 
