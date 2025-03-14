@@ -22,6 +22,9 @@ class YOLOEPETrainer(DetectionTrainer):
             nc=min(self.data["nc"], 80),
             verbose=verbose and RANK == -1,
         )
+        
+        del model.model[-1].savpe
+        
         if weights:
             model.load(weights)
         
@@ -49,6 +52,9 @@ class YOLOEPESegTrainer(SegmentationTrainer):
             nc=min(self.data["nc"], 80),
             verbose=verbose and RANK == -1,
         )
+        
+        del model.model[-1].savpe
+        
         if weights:
             model.load(weights)
         
