@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import gradio as gr
+import supervision as sv
 from scipy.ndimage import binary_fill_holes
 from ultralytics import YOLOE
 from ultralytics.utils.torch_utils import smart_inference_mode
@@ -44,8 +45,34 @@ def yoloe_inference(image, prompts, target_image, model_id, image_size, conf_thr
         model.model.model[-1].max_det = 1000
 
     results = model.predict(source=image, imgsz=image_size, conf=conf_thresh, iou=iou_thresh, **kwargs)
-    annotated_image = results[0].plot()
-    return annotated_image[:, :, ::-1]
+    detections = sv.Detections.from_ultralytics(results[0])
+
+    resolution_wh = image.size
+    thickness = sv.calculate_optimal_line_thickness(resolution_wh=resolution_wh)
+    text_scale = sv.calculate_optimal_text_scale(resolution_wh=resolution_wh)
+
+    labels = [
+        f"{class_name} {confidence:.2f}"
+        for class_name, confidence
+        in zip(detections['class_name'], detections.confidence)
+    ]
+
+    annotated_image = image.copy()
+    annotated_image = sv.MaskAnnotator(
+        color_lookup=sv.ColorLookup.INDEX,
+        opacity=0.4
+    ).annotate(scene=annotated_image, detections=detections)
+    annotated_image = sv.BoxAnnotator(
+        color_lookup=sv.ColorLookup.INDEX,
+        thickness=thickness
+    ).annotate(scene=annotated_image, detections=detections)
+    annotated_image = sv.LabelAnnotator(
+        color_lookup=sv.ColorLookup.INDEX,
+        text_scale=text_scale,
+        smart_position=True
+    ).annotate(scene=annotated_image, detections=detections, labels=labels)
+
+    return annotated_image
 
 
 def app():
@@ -57,18 +84,18 @@ def app():
                     box_image = ImagePrompter(type="pil", label="DrawBox", visible=False, interactive=True)
                     mask_image = gr.ImageEditor(type="pil", label="DrawMask", visible=False, interactive=True, layers=False, canvas_size=(640, 640))
                     target_image = gr.Image(type="pil", label="Target Image", visible=False, interactive=True)
-                
+
                 yoloe_infer = gr.Button(value="Detect & Segment Objects")
                 prompt_type = gr.Textbox(value="Text", visible=False)
 
                 with gr.Tab("Text") as text_tab:
                     texts = gr.Textbox(label="Input Texts", value='person,bus', placeholder='person,bus', visible=True, interactive=True)
-                
+
                 with gr.Tab("Visual") as visual_tab:
                     with gr.Row():
                         visual_prompt_type = gr.Dropdown(choices=["bboxes", "masks"], value="bboxes", label="Visual Type", interactive=True)
                         visual_usage_type = gr.Radio(choices=["Intra-Image", "Cross-Image"], value="Intra-Image", label="Intra/Cross Image", interactive=True)
-                
+
                 with gr.Tab("Prompt-Free") as prompt_free_tab:
                     gr.HTML(
                         """
@@ -113,7 +140,7 @@ def app():
 
             with gr.Column():
                 output_image = gr.Image(type="numpy", label="Annotated Image", visible=True)
-        
+
         def update_text_image_visibility():
             return gr.update(value="Text"), gr.update(visible=True), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
 
@@ -131,13 +158,13 @@ def app():
             inputs=None,
             outputs=[prompt_type, raw_image, box_image, mask_image, target_image]
         )
-        
+
         visual_tab.select(
             fn=update_visual_image_visiblity,
             inputs=[visual_prompt_type, visual_usage_type],
             outputs=[prompt_type, raw_image, box_image, mask_image, target_image]
         )
-        
+
         prompt_free_tab.select(
             fn=update_pf_image_visibility,
             inputs=None,
@@ -227,8 +254,8 @@ def app():
                 "yoloe-v8l",
                 640,
                 0.25,
-                0.7]], 
-            inputs=[raw_image, texts, model_id, image_size, conf_thresh, iou_thresh], 
+                0.7]],
+            inputs=[raw_image, texts, model_id, image_size, conf_thresh, iou_thresh],
             visible=True, cache_examples=False, label="Text Prompt Examples")
 
         box_examples = gr.Examples(
@@ -239,8 +266,8 @@ def app():
                 640,
                 0.2,
                 0.7,
-            ]], 
-            inputs=[box_image, target_image, model_id, image_size, conf_thresh, iou_thresh], 
+            ]],
+            inputs=[box_image, target_image, model_id, image_size, conf_thresh, iou_thresh],
             visible=False, cache_examples=False, label="Box Visual Prompt Examples")
 
         mask_examples = gr.Examples(
@@ -262,24 +289,24 @@ def app():
                 640,
                 0.25,
                 0.7,
-            ]], 
-            inputs=[raw_image, model_id, image_size, conf_thresh, iou_thresh], 
+            ]],
+            inputs=[raw_image, model_id, image_size, conf_thresh, iou_thresh],
             visible=False, cache_examples=False, label="Prompt-free Examples")
-        
+
         # Components update
         def load_box_example(visual_usage_type):
             return (gr.update(visible=True, value={"image": "ultralytics/assets/bus_box.jpg", "points": [[235, 408, 2, 342, 863, 3]]}),
                     gr.update(visible=(visual_usage_type=="Cross-Image")))
-        
+
         def load_mask_example(visual_usage_type):
             return gr.update(visible=True), gr.update(visible=(visual_usage_type=="Cross-Image"))
-            
+
         box_examples.load_input_event.then(
             fn=load_box_example,
             inputs=visual_usage_type,
             outputs=[box_image, target_image]
         )
-        
+
         mask_examples.load_input_event.then(
             fn=load_mask_example,
             inputs=visual_usage_type,
