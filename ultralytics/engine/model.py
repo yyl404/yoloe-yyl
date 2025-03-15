@@ -8,6 +8,8 @@ import numpy as np
 import torch
 from PIL import Image
 
+from huggingface_hub import PyTorchModelHubMixin
+
 from ultralytics.cfg import TASK2DATA, get_cfg, get_save_dir
 from ultralytics.engine.results import Results
 from ultralytics.hub import HUB_WEB_ROOT, HUBTrainingSession
@@ -26,7 +28,10 @@ from ultralytics.utils import (
 )
 
 
-class Model(nn.Module):
+class Model(nn.Module, PyTorchModelHubMixin,
+           repo_url="https://github.com/THU-MIG/yoloe",
+           pipeline_tag="zero-shot-object-detection",
+           license="agpl-3.0"):
     """
     A base class for implementing YOLO models, unifying APIs across different model types.
 
@@ -147,6 +152,12 @@ class Model(nn.Module):
         # Delete super().training for accessing self.model.training
         del self.training
 
+    def push_to_hub(self, repo_name, **kwargs):
+        config = kwargs.get("config", {})
+        config["model"] = self.model.yaml["yaml_file"]
+        kwargs["config"] = config
+        super().push_to_hub(repo_name, **kwargs)
+    
     def __call__(
         self,
         source: Union[str, Path, int, Image.Image, list, tuple, np.ndarray, torch.Tensor] = None,
