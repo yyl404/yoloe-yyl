@@ -556,9 +556,12 @@ class Model(nn.Module, PyTorchModelHubMixin,
         args = {**self.overrides, **custom, **kwargs}  # highest priority args on the right
         prompts = args.pop("prompts", None)  # for SAM-type models
         return_vpe = args.pop("return_vpe", None)
-
+        fuse = args.pop("fuse", True)
+        
         if not self.predictor:
             self.predictor = (predictor or self._smart_load("predictor"))(overrides=args, _callbacks=self.callbacks)
+            if hasattr(self.predictor, "set_fuse"):
+                self.predictor.set_fuse(fuse)
             self.predictor.setup_model(model=self.model, verbose=is_cli)
         else:  # only update args if predictor is already setup
             self.predictor.args = get_cfg(self.predictor.args, args)

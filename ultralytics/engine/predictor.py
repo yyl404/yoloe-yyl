@@ -302,6 +302,9 @@ class BasePredictor:
             LOGGER.info(f"Results saved to {colorstr('bold', self.save_dir)}{s}")
         self.run_callbacks("on_predict_end")
 
+    def set_fuse(self, fuse):
+        self.fuse = fuse
+
     def setup_model(self, model, verbose=True):
         """Initialize YOLO model with given parameters and set it to evaluation mode."""
         self.model = AutoBackend(
@@ -311,7 +314,7 @@ class BasePredictor:
             data=self.args.data,
             fp16=self.args.half,
             batch=self.args.batch,
-            fuse=True,
+            fuse=self.fuse,
             verbose=verbose,
         )
 
