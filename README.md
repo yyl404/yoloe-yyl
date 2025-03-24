@@ -105,6 +105,8 @@ Object detection and segmentation are widely employed in computer vision applica
 | [YOLOE-11-L](https://huggingface.co/jameslahm/yoloe/blob/main/yoloe-11l-seg-coco.pt) | 640 | 80 | 52.6 | 69.7 | 57.5 | 42.4 | 66.2 | 45.2 | [FT](./logs/yoloe-11l-seg-coco/) |
 
 ## Installation
+You could also quickly try YOLOE for [prediction](https://colab.research.google.com/drive/1LRFEVarAIVSnIeL_pCPtsFL87FsEe46U?usp=sharing) and [transferring](https://colab.research.google.com/drive/1y-r4y_owfFAfyqbqP2t64H7IqjURkKwe?usp=sharing) using colab notebooks.
+
 `conda` virtual environment is recommended. 
 ```bash
 conda create -n yoloe python=3.10 -y
