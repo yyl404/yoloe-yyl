@@ -14,12 +14,10 @@ class YOLOEPETrainer(DetectionTrainer):
     
     def get_model(self, cfg=None, weights=None, verbose=True):
         """Return YOLOEModel initialized with specified config and weights."""
-        # NOTE: This `nc` here is the max number of different text samples in one image, rather than the actual `nc`.
-        # NOTE: Following the official config, nc hard-coded to 80 for now.
         model = YOLOEModel(
             cfg["yaml_file"] if isinstance(cfg, dict) else cfg,
             ch=3,
-            nc=min(self.data["nc"], 80),
+            nc=self.data["nc"],
             verbose=verbose and RANK == -1,
         )
         
@@ -44,12 +42,10 @@ class YOLOEPESegTrainer(SegmentationTrainer):
     
     def get_model(self, cfg=None, weights=None, verbose=True):
         """Return YOLOEModel initialized with specified config and weights."""
-        # NOTE: This `nc` here is the max number of different text samples in one image, rather than the actual `nc`.
-        # NOTE: Following the official config, nc hard-coded to 80 for now.
         model = YOLOESegModel(
             cfg["yaml_file"] if isinstance(cfg, dict) else cfg,
             ch=3,
-            nc=min(self.data["nc"], 80),
+            nc=self.data["nc"],
             verbose=verbose and RANK == -1,
         )
         
