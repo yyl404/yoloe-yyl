@@ -2163,15 +2163,12 @@ class LoadVisualPrompt:
             raise ValueError("LoadVisualPrompt must have bboxes or masks in the label")
 
         cls = labels["cls"].squeeze(-1).to(torch.int)
-        cls_unique, inverse_indices = torch.unique(cls, sorted=True, return_inverse=True)
-        if len(cls_unique) != 0 and self.augment:
-            assert(len(cls_unique) == cls_unique[-1] + 1)
-        elif not self.augment:
-            # assert(len(cls_unique) == 1)
-            pass
-        visuals = torch.zeros(len(cls_unique), *masksz)
-        for idx, mask in zip(inverse_indices, masks):
-            visuals[idx] = torch.logical_or(visuals[idx], mask)
+        if len(cls):
+            visuals = torch.zeros(cls.max() + 1, *masksz)
+            for idx, mask in zip(cls, masks):
+                visuals[idx] = torch.logical_or(visuals[idx], mask)
+        else:
+            visuals = torch.zeros(0, *masksz)
         # visuals[0] = masks[random.choice(range(len(masks)))]
         labels["visuals"] = visuals
         return labels

@@ -27,6 +27,40 @@ class YOLOEVPPredictorMixin:
     
     def set_prompts(self, prompts):
         self.prompts = deepcopy(prompts)
+    
+    def load_vp(self, label):
+        label["img"] = label["img"].transpose(2, 0, 1)
+        load_vp = LoadVisualPrompt(nc=len(label["cls"]), augment=False)
+        label = load_vp(label)
+        label["img"] = label["img"].transpose(1, 2, 0)
+        return label
+    
+    def process_box_label(self, img, bboxes, cls, letterbox):
+        label = dict(
+            img=img,
+            instances=Instances(bboxes=bboxes.astype(np.float32), 
+                                segments=np.zeros((0, 1000, 2), dtype=np.float32), 
+                                bbox_format="xyxy", normalized=False),
+            cls=torch.tensor(cls).unsqueeze(-1)
+        )
+        label = letterbox(label)
+        instances = label.pop("instances")
+        h, w = label["img"].shape[:2]
+        instances.normalize(w, h)
+        instances.convert_bbox(format="xywh")
+        label["bboxes"] = torch.from_numpy(instances.bboxes)
+        return self.load_vp(label)
+    
+    def process_mask_label(self, img, masks, cls, letterbox):
+        img = letterbox(image=img)
+        masks = np.stack([letterbox(image=mask) for mask in masks])
+        masks[masks == 114] = 0
+        label = dict(
+            img=img,
+            masks=masks,
+            cls=torch.tensor(cls).unsqueeze(-1)
+        )
+        return self.load_vp(label)
         
     def pre_transform(self, im):
         letterbox = LetterBox(
@@ -34,53 +68,27 @@ class YOLOEVPPredictorMixin:
             auto=False,
             stride=int(self.model.stride[-1].item()),
         )
-        assert(len(im) == 1)
-        
-        if "bboxes" in self.prompts and len(self.prompts["bboxes"]) > 0:
-            labels = dict(
-                img=im[0],
-                instances=Instances(bboxes=self.prompts["bboxes"], 
-                                    segments=np.zeros((0, 1000, 2), dtype=np.float32), 
-                                    bbox_format="xyxy", normalized=False),
-                cls=torch.tensor(self.prompts["cls"]).unsqueeze(-1)
-            )
+
+        cls = self.prompts["cls"]
+        cls = [cls] if not isinstance(cls, list) else cls
             
-            labels = letterbox(labels)
-            
-            instances = labels.pop("instances")
-            h, w = labels["img"].shape[:2]
-            instances.normalize(w, h)
-            instances.convert_bbox(format="xywh")
-            labels["bboxes"] = torch.from_numpy(instances.bboxes)
+        if "bboxes" in self.prompts:
+            bboxes = self.prompts["bboxes"]
+            bboxes = [bboxes] if not isinstance(bboxes, list) else bboxes
+            labels = [self.process_box_label(im[i], bboxes[i], cls[i], letterbox) for i in range(len(im))]
         elif "masks" in self.prompts:
             masks = self.prompts["masks"]
-
-            img = letterbox(image=im[0])
-            resized_masks = []
-            for i in range(len(masks)):
-                resized_masks.append(letterbox(image=masks[i]))
-            masks = np.stack(resized_masks)
-            masks[masks == 114] = 0
-
-            labels = dict(
-                img=img,
-                masks=masks,
-                cls=torch.tensor(self.prompts["cls"]).unsqueeze(-1)
-            )
+            masks = [masks] if not isinstance(masks, list) else masks
+            labels = [self.process_mask_label(im[i], masks[i], cls[i], letterbox) for i in range(len(im))]
         else:
             raise ValueError("Please provide valid bboxes or masks")
 
-        labels["img"] = labels["img"].transpose(2, 0, 1)
+        self.prompts = torch.nn.utils.rnn.pad_sequence([label["visuals"] for label in labels], batch_first=True).to(self.device)
         
-        load_vp = LoadVisualPrompt(nc=len(self.prompts["cls"]), augment=False)
-        labels = load_vp(labels)
-        
-        cls = np.unique(self.prompts["cls"])
-        self.prompts = labels["visuals"].unsqueeze(0).to(self.device)
         self.model.model[-1].nc = self.prompts.shape[1]
-        self.model.names = [f"object{cls[i]}" for i in range(self.prompts.shape[1])]
+        self.model.names = [f"object{i}" for i in range(self.prompts.shape[1])]
         
-        return [labels["img"].transpose(1, 2, 0)]
+        return [label["img"] for label in labels]
 
     def inference(self, im, *args, **kwargs):
         if self.return_vpe:
