@@ -35,8 +35,8 @@ class YOLOEValidatorMixin:
             assert(preds.shape[0] == 1)
             
             cls = batch["cls"].squeeze(-1).to(torch.int).unique(sorted=True)
-            assert(len(cls) == 1 and preds.shape[1] == 1)
-            visual_pe[cls] += preds[0] / cls_visual_num[cls]
+            assert(len(cls) == 1)
+            visual_pe[cls] += preds[0][cls] / cls_visual_num[cls]
         
         visual_pe[cls_visual_num != 0] = F.normalize(visual_pe[cls_visual_num != 0], dim=-1, p=2)
         visual_pe[cls_visual_num == 0] = 0
