@@ -1,6 +1,6 @@
 # [YOLOE: Real-Time Seeing Anything](https://arxiv.org/abs/2503.07465)
 
-Official PyTorch implementation of **YOLOE**.
+Official PyTorch implementation of **YOLOE**. ICCV 2025.
 
 <p align="center">
   <img src="figures/comparison.svg" width=70%> <br>
