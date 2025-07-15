@@ -318,3 +318,98 @@ If our code or models help your work, please cite our paper:
       url={https://arxiv.org/abs/2503.07465}, 
 }
 ```
+
+# YYL: Incremental Learning
+
+在执行一切代码之前，先运行
+```shell
+python tools/convert_segm2det.py
+```
+将默认的用于分割的预训练权重转换为用于检测的权重。如果后续执行出现权重无法找到的情况，重新执行这一步。
+
+我们训练和测试基于的模型是```yoloe-v8m```。
+
+训练和测试代码：
+```
+python train_pe_all.py
+```
+
+我们使用Pascal VOC 2007/2012数据集进行训练和测试。
+```
+|-voc_as_yolo
+|--images
+|--labels
+|--voc.yaml
+|--stage1
+    |--images
+    |--labels
+    |--stage1.yaml
+|--stage2
+    |--images
+    |--labels
+    |--stage1.yaml
+```
+
+通过：
+```python
+# data = "/root/data/voc_as_yolo/stage1/stage1.yaml"
+# data = "/root/data/voc_as_yolo/stage2/stage2.yaml"
+data = "/root/data/voc_as_yolo/voc.yaml"
+```
+选择进行训练或测试的数据集。
+
+通过：
+```python
+model = YOLOE("yoloe-v8m-seg-det.pt")
+# model = YOLOE("trained_on_stage1_best.pt")
+# model = YOLOE("trained_on_stage12_best.pt")
+# model = YOLOE("trained_on_all_best.pt")
+```
+选择训练初始权重或者测试权重
+```
+
+选择训练或者测试（若选择训练，无需开启model.val，训练结束后会自动进行validation）
+```python
+# 训练
+model.train(data=data, epochs=100, close_mosaic=10, batch=32, 
+            optimizer='AdamW', lr0=1e-3, warmup_bias_lr=0.0, \
+            weight_decay=0.025, momentum=0.9, workers=4, \
+            device="0", **extends, \
+            trainer=YOLOEPETrainer, train_pe_path=pe_path,
+            val_interval=1)
+# model.val(data=data, batch=1, device="0")
+
+# 测试
+# model.train(data=data, epochs=100, close_mosaic=10, batch=32, 
+#             optimizer='AdamW', lr0=1e-3, warmup_bias_lr=0.0, \
+#             weight_decay=0.025, momentum=0.9, workers=4, \
+#             device="0", **extends, \
+#             trainer=YOLOEPETrainer, train_pe_path=pe_path,
+#             val_interval=1)
+model.val(data=data, batch=1, device="0")
+```
+
+我们的基本测试流程如下：
+1. 从预训练模型权重出发，基于```stage1/stage1.yaml```进行100轮（默认轮数）训练，得到的权重重命名为```tained_on_stage1_best.pt```（通常在runs/detect/train{i}/weights目录下，i是编号）
+2. 利用```tained_on_stage1_best.pt```在```voc.yaml"```，```stage1/stage1.yaml```，```stage2/stage2.yaml```三个数据集进行测试，记录结果
+3. 从```tained_on_stage1_best.pt```出发，基于```stage2/stage2.yaml```进行100轮训练，得到的权重重命名为```tained_on_stage12_best.pt```
+4. 利用```tained_on_stage12_best.pt```在```voc.yaml"```，```stage1/stage1.yaml```，```stage2/stage2.yaml```三个数据集进行测试，记录结果
+
+我们测试三种不同的增量学习方法
+
+## 样本回放
+通过将stage1的部分样本放入到stage2里，避免```tained_on_stage12_best.pt```在```stage1/stage1.yaml```上的遗忘现象。
+
+实现的方法：在进行第三步训练之前，从数据集```stage1```中选择几张图像和对应的标签文本，混入到```stage2```当中。需要注意的是，混入以后，```stage2```当中的总类别数变多了，需要修改```stage2/stage2.yaml```当中标签和序号的对应关系，同时也要修改标注文本当中的序号。我的建议是，将混入的新类别序号排列在已有类别的后面，这样只需要修改混入的少量数据的标签文本即可。
+
+这个实验需要进行多次，逐步增加混入的样本数量。每次都记录混入的**样本数量**和训练以后```tained_on_stage12_best.pt```在三个数据集上的测试结果。
+
+而权重```tained_on_stage1_best.pt```只需要训练一次就可以。
+
+## 伪标签
+可以算作是蒸馏方法的一种。在训练出```tained_on_stage1_best.pt```以后，用这个权重去对```stage2```数据集进行推理。将推理的结果作为伪标签，和原本```stage2```的标签进行混合，然后在混合后的数据集上进行训练。
+
+这个实验同样只需要训练一次```tained_on_stage1_best.pt```，但是需要重复训练```tained_on_stage12_best.pt```。每次训练都需要逐步提高或者降低伪标签被采纳的置信度阈值，然后记录```tained_on_stage12_best.pt```在三个数据集上的测试结果。
+
+## Visual Prompt Generating
+这部分YYL负责，主要测试利用特征匹配生成粗糙visual prompt，再利用yoloe的visual prompt检测功能实现增量学习。

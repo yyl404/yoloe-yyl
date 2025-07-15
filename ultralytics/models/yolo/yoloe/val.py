@@ -100,7 +100,8 @@ class YOLOEValidatorMixin:
             
             return stats
         else:
-            if isinstance(model, YOLOEModel) and not hasattr(model, "pe"):
+            # if isinstance(model, YOLOEModel) and not hasattr(model, "pe"):
+            if isinstance(model, YOLOEModel):
                 self.device = select_device(self.args.device, self.args.batch)
                 
                 model.eval().to(self.device)
