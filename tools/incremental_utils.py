@@ -2,8 +2,8 @@ import os
 import shutil
 from tqdm import tqdm
 from ultralytics import YOLO
-from ultralytics.utils import yaml_model_load, yaml_save
-
+from ultralytics.utils import yaml_save
+from ultralytics.nn.tasks import yaml_model_load
 
 
 # ------------------知识蒸馏相关函数------------------
