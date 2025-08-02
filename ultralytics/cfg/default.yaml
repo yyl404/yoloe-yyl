@@ -126,6 +126,9 @@ cfg: # (str, optional) for overriding defaults.yaml
 tracker: botsort.yaml # (str) tracker type, choices=[botsort.yaml, bytetrack.yaml]
 
 val_interval: 20
+
+# YOLOE settings -------------------------------------------------------------------------------------------------------
 text_model: mobileclip:blt
 load_vp: False
 train_pe_path: None
+fuse_pe: True

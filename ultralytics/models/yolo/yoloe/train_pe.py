@@ -11,6 +11,9 @@ from ultralytics.nn.tasks import YOLOEModel, YOLOESegModel
 from ultralytics.utils import DEFAULT_CFG, RANK
 
 class YOLOEPETrainer(DetectionTrainer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fuse_pe = self.args.fuse_pe
     
     def get_model(self, cfg=None, weights=None, verbose=True):
         """Return YOLOEModel initialized with specified config and weights."""
@@ -29,11 +32,12 @@ class YOLOEPETrainer(DetectionTrainer):
         model.eval()
         pe_state = torch.load(self.args.train_pe_path)
         model.set_classes(pe_state["names"], pe_state["pe"])
-        model.model[-1].fuse(model.pe)
-        model.model[-1].cv3[0][2] = deepcopy(model.model[-1].cv3[0][2]).requires_grad_(True)
-        model.model[-1].cv3[1][2] = deepcopy(model.model[-1].cv3[1][2]).requires_grad_(True)
-        model.model[-1].cv3[2][2] = deepcopy(model.model[-1].cv3[2][2]).requires_grad_(True)
-        del model.pe
+        if self.fuse_pe:
+            model.model[-1].fuse(model.pe)
+            model.model[-1].cv3[0][2] = deepcopy(model.model[-1].cv3[0][2]).requires_grad_(True)
+            model.model[-1].cv3[1][2] = deepcopy(model.model[-1].cv3[1][2]).requires_grad_(True)
+            model.model[-1].cv3[2][2] = deepcopy(model.model[-1].cv3[2][2]).requires_grad_(True)
+            del model.pe
         model.train()
         
         return model
