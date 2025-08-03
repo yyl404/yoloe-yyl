@@ -2,7 +2,7 @@ import os
 import shutil
 from tqdm import tqdm
 from ultralytics import YOLO
-from ultralytics.utils import yaml_save
+from ultralytics.utils import yaml_save, yaml_load
 from ultralytics.nn.tasks import yaml_model_load
 
 
@@ -10,7 +10,7 @@ from ultralytics.nn.tasks import yaml_model_load
 def merge_task_classes(encountered_classes, classes_current_task):
     encountered_classes_id_to_new_id = {} # encountered_classes_id_to_new_id[encountered_class_id] = new_class_id
     task_classes_id_to_new_id = {} # task_classes_id_to_new_id[task_class_id] = new_class_id
-    merged_classes = list(set(encountered_classes).union(classes_current_task))
+    merged_classes = sorted(list(set(encountered_classes).union(classes_current_task))) # 排序后可以保证可复现性
     for new_cat_id, class_name in enumerate(merged_classes):
         if class_name in encountered_classes:
             encountered_classes_id_to_new_id[encountered_classes.index(class_name)] = new_cat_id
@@ -47,9 +47,9 @@ def read_and_convert_labels(labels_dir, id_mapping):
     return labels
 
 
-def merge_and_save_labels(original_labels, pseudo_labels, output_dir):
-    """合并标注文件并保存"""
-    os.makedirs(output_dir, exist_ok=True)
+def merge_labels(original_labels, pseudo_labels):
+    """合并标注文件"""
+    merged_labels = {}
     all_files = set(original_labels.keys()) | set(pseudo_labels.keys())
     
     for label_file in all_files:
@@ -63,15 +63,126 @@ def merge_and_save_labels(original_labels, pseudo_labels, output_dir):
         if label_file in pseudo_labels:
             merged_lines.extend(pseudo_labels[label_file])
         
-        # 输出合并后的标注文件
+        merged_labels[label_file] = merged_lines
+    
+    return merged_labels
+
+
+def save_labels(labels, output_dir):
+    """保存标注文件"""
+    os.makedirs(output_dir, exist_ok=True)
+    
+    for label_file, lines in labels.items():
         output_path = os.path.join(output_dir, label_file)
         with open(output_path, 'w') as f:
-            f.writelines(merged_lines)
+            f.writelines(lines)
+
+
+def create_id_converted_dataset(task_data_path, class_mapping, save_dir, dataset_name, new_classes_names=None):
+    """
+    创建临时数据集，转换标签ID以匹配模型输出
+    通用的数据集创建函数，支持评估和训练场景
+    
+    Args:
+        task_data_path: 任务数据配置文件路径
+        class_mapping: 类别ID映射 {old_id: new_id}
+        save_dir: 保存目录
+        dataset_name: 数据集目录名称
+        model_classes: 模型类别列表（用于评估场景，训练场景可为None）
+    
+    Returns:
+        tuple: (config_path, dataset_dir) 或 (config_path, class_mapping, dataset_dir) 用于评估场景
+    """
+    # 读取原始数据配置
+    yaml_data = yaml_load(task_data_path)
+    
+    # 创建数据集目录
+    dataset_dir = os.path.abspath(os.path.join(save_dir, dataset_name))
+    if os.path.exists(dataset_dir):
+        shutil.rmtree(dataset_dir)
+    os.makedirs(dataset_dir, exist_ok=True)
+    
+    # 复制图像文件并转换标签
+    for split in ['train', 'val']:
+        if split in yaml_data:
+            # 源图像目录
+            source_images = os.path.join(yaml_data['path'], yaml_data[split]) if 'path' in yaml_data.keys() else \
+                os.path.join(os.path.dirname(task_data_path), yaml_data[split])
+            
+            # 目标图像目录
+            target_images = os.path.join(dataset_dir, f"images/{split}")
+            os.makedirs(target_images, exist_ok=True)
+            shutil.copytree(source_images, target_images, dirs_exist_ok=True)
+            
+            # 源标签目录
+            source_labels = os.path.join(yaml_data['path'], yaml_data[split].replace('images', 'labels')) if 'path' in yaml_data.keys() else \
+                os.path.join(os.path.dirname(task_data_path), yaml_data[split].replace('images', 'labels'))
+            
+            # 目标标签目录
+            target_labels = os.path.join(dataset_dir, f"labels/{split}")
+            os.makedirs(target_labels, exist_ok=True)
+            
+            # 转换标签ID并保存
+            if os.path.exists(source_labels):
+                converted_labels = read_and_convert_labels(source_labels, class_mapping)
+                save_labels(converted_labels, target_labels)
+    
+    # 创建配置文件
+    config = {
+        'train': 'images/train',
+        'val': 'images/val',
+        'names': {i: cls for i, cls in enumerate(new_classes_names)}
+    }
+    config_path = os.path.join(dataset_dir, 'dataconfig.yaml')
+    yaml_save(data=config, file=config_path)
+    return config_path
+
+
+def generate_pseudo_labels(teacher_model, source, save_dir, task_id, split, conf_threshold=0.25):
+    """生成伪标注
+    
+    Args:
+        teacher_model: 教师模型
+        source: 图像源目录
+        save_dir: 保存目录
+        task_id: 任务ID
+        split: 数据集分割（train/val）
+        conf_threshold: 置信度阈值，默认0.25
+    """
+    results = teacher_model.predict(source, conf=conf_threshold, save_txt=True, save_conf=False, stream=True,
+                                    project=save_dir, name=f"task_{task_id}_pseudo_labels/{split}", verbose=False)
+    for result in tqdm(results, desc=f"Generating pseudo labels for {split}", total=len(os.listdir(source)),
+                       position=0, leave=True, ncols=80):
+        pass # 遍历结果生成器的同时会自动保存结果文件
+
+
+def copy_images_and_labels(source, target_dir, yaml_data, data_path, split):
+    """复制图像文件"""
+    # 复制图像
+    source_images = os.path.join(yaml_data['path'], yaml_data[split]) if 'path' in yaml_data.keys() else \
+        os.path.join(os.path.dirname(data_path), yaml_data[split])
+    
+    target_images = os.path.join(target_dir, f"images/{split}")
+    if os.path.exists(target_images):
+        shutil.rmtree(target_images)
+    shutil.copytree(source_images, target_images)
+    print(f"Copied images from {source_images} to {target_images}")
 
 
 def process_pseudo_labels(teacher_model, yaml_data, data_path, save_dir, task_id, 
-                          encountered_classes_id_to_new_id):
-    """处理伪标注：生成、转换、合并标注文件"""
+                          encountered_classes_id_to_new_id, task_classes_id_to_new_id, conf_threshold=0.25):
+    """处理伪标注：生成、转换、合并标注文件
+    
+    Args:
+        teacher_model: 教师模型
+        yaml_data: 数据配置
+        data_path: 数据路径
+        save_dir: 保存目录
+        task_id: 任务ID
+        encountered_classes_id_to_new_id: 已遇到类别ID到新ID的映射
+        task_classes_id_to_new_id: 任务类别ID到新ID的映射
+        conf_threshold: 伪标签置信度阈值，默认0.25
+    """
     splits = ['train', 'val']
     
     for split in splits:
@@ -79,34 +190,30 @@ def process_pseudo_labels(teacher_model, yaml_data, data_path, save_dir, task_id
         source = os.path.join(yaml_data['path'], yaml_data[split]) if 'path' in yaml_data.keys() else \
             os.path.join(os.path.dirname(data_path), yaml_data[split])
         
-        # 使用teacher_model生成伪标注
-        results = teacher_model.predict(source, conf=0.25, save_txt=True, save_conf=False, stream=True,
-                                        project=save_dir, name=f"task_{task_id}_pseudo_labels/{split}", verbose=False)
-        for result in tqdm(results, desc=f"Generating pseudo labels for {split}"):
-            pass # 遍历结果生成器的同时会自动保存结果文件
+        # 1. 生成伪标注
+        generate_pseudo_labels(teacher_model, source, save_dir, task_id, split, conf_threshold)
         
-        images_output_dir = os.path.join(save_dir, f"task_{task_id}_pseudo_labels/images/{split}")
-        # 直接复制图像文件而不是创建软链接，避免YOLO路径推断错误
-        if os.path.exists(images_output_dir):
-            shutil.rmtree(images_output_dir)
-        shutil.copytree(source, images_output_dir)
-        print(f"Copied images from {source} to {images_output_dir}")
+        # 2. 复制图像文件
+        images_output_dir = os.path.join(save_dir, f"task_{task_id}_pseudo_labels")
+        copy_images_and_labels(source, images_output_dir, yaml_data, data_path, split)
         
-        # 设置路径
+        # 3. 设置路径
         pseudo_labels_dir = os.path.join(save_dir, f"task_{task_id}_pseudo_labels/{split}/labels")
         output_dir = os.path.join(save_dir, f"task_{task_id}_pseudo_labels/labels/{split}")
         
-        # 读取并转换原始标注
+        # 4. 转换原始标注ID
         original_labels_dir = os.path.join(yaml_data['path'], yaml_data[split].replace('images', 'labels')) if 'path' in yaml_data.keys() else \
             os.path.join(os.path.dirname(data_path), yaml_data[split].replace('images', 'labels'))
-        # original_labels = read_and_convert_labels(original_labels_dir, task_classes_id_to_new_id)
-        original_labels = {}
+        original_labels = read_and_convert_labels(original_labels_dir, task_classes_id_to_new_id)
         
-        # 读取并转换伪标注
+        # 5. 转换伪标注ID
         pseudo_labels = read_and_convert_labels(pseudo_labels_dir, encountered_classes_id_to_new_id)
         
-        # 合并并保存标注
-        merge_and_save_labels(original_labels, pseudo_labels, output_dir)
+        # 6. 合并标签
+        merged_labels = merge_labels(original_labels, pseudo_labels)
+        
+        # 7. 保存数据集
+        save_labels(merged_labels, output_dir)
         
         # 删除临时生成的伪标注文件
         if os.path.exists(os.path.join(save_dir, f"task_{task_id}_pseudo_labels/{split}")):
@@ -114,10 +221,10 @@ def process_pseudo_labels(teacher_model, yaml_data, data_path, save_dir, task_id
 
 
 # ------------------增量学习相关函数------------------
-def transfer_weights(ckpt_path, model_cfg, weight_transfer_map, encountered_classes, merged_classes, save_dir):
+def transfer_weights(ckpt_path, model_cfg, weight_transfer_map, classes_names, save_dir):
     weight = YOLO(ckpt_path).model.state_dict()
     model_cfg = yaml_model_load(model_cfg)
-    model_cfg['nc'] = len(merged_classes)
+    model_cfg['nc'] = len(classes_names)
     yaml_save(data=model_cfg, file=os.path.join(save_dir, "modelconfig_temp.yaml"))
     model = YOLO(os.path.join(save_dir, "modelconfig_temp.yaml"))
     new_weight = model.model.state_dict()
@@ -142,15 +249,9 @@ def transfer_weights(ckpt_path, model_cfg, weight_transfer_map, encountered_clas
             # 其他层直接复制（形状相同）
             else:
                 new_weight[key] = weight[key].clone()
-    
-    # 输出迁移信息
-    print("  分类头通道映射: {} -> {}".format(
-        {k: v for k, v in enumerate(encountered_classes)},
-        {k: v for k, v in enumerate(merged_classes)}
-        )
-    )
 
     model.model.load_state_dict(new_weight)
+    model.model.names = {k: v for k, v in enumerate(classes_names)}
     model.save(os.path.join(save_dir, "model_temp.pt"))
     model = YOLO(os.path.join(save_dir, "model_temp.pt"))
     return model
