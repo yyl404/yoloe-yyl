@@ -1,1 +1,1 @@
-python create_incremental_dataset.py --dataset_path /root/datasets/VOC/VOC.yaml --output_path /root/datasets/VOC_inc_15_1_1_1_1_1 --n_classes 15 1 1 1 1 1
+python create_incremental_dataset.py --dataset_path /hy-tmp/datasets/VOC/VOC.yaml --output_path /hy-tmp/datasets/VOC_inc_15_5 --n_classes 15 5

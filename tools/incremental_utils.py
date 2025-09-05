@@ -1,5 +1,9 @@
 import os
 import shutil
+import random
+import cv2
+import numpy as np
+import json
 from tqdm import tqdm
 from ultralytics import YOLO
 from ultralytics.utils import yaml_save, yaml_load
@@ -346,3 +350,574 @@ def transfer_weights(ckpt_path, model_cfg, weight_transfer_map, classes_names, s
     model.model.load_state_dict(new_weight)
     model.model.names = {k: v for k, v in enumerate(classes_names)}
     model.save(os.path.join(save_dir, output_name))
+
+#------------------数据增强相关函数------------------
+def calculate_iou(box1, box2):
+    """计算两个边界框的IoU
+    
+    Args:
+        box1: [x_center, y_center, width, height] (归一化坐标)
+        box2: [x_center, y_center, width, height] (归一化坐标)
+    
+    Returns:
+        float: IoU值
+    """
+    # 转换为左上角和右下角坐标
+    x1_1, y1_1 = box1[0] - box1[2]/2, box1[1] - box1[3]/2
+    x2_1, y2_1 = box1[0] + box1[2]/2, box1[1] + box1[3]/2
+    
+    x1_2, y1_2 = box2[0] - box2[2]/2, box2[1] - box2[3]/2
+    x2_2, y2_2 = box2[0] + box2[2]/2, box2[1] + box2[3]/2
+    
+    # 计算交集
+    x1_i = max(x1_1, x1_2)
+    y1_i = max(y1_1, y1_2)
+    x2_i = min(x2_1, x2_2)
+    y2_i = min(y2_1, y2_2)
+    
+    if x2_i <= x1_i or y2_i <= y1_i:
+        return 0.0
+    
+    intersection = (x2_i - x1_i) * (y2_i - y1_i)
+    
+    # 计算并集
+    area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
+    area2 = (x2_2 - x1_2) * (y2_2 - y1_2)
+    union = area1 + area2 - intersection
+    
+    return intersection / union if union > 0 else 0.0
+
+
+def parse_paste_sample_filename(filename):
+    """解析粘贴样本文件名，提取类别名和索引
+    
+    Args:
+        filename: 文件名，格式为 {class_name}_best_sample_{index}.jpg
+    
+    Returns:
+        tuple: (class_name, index)
+    """
+    if not filename.endswith('.jpg'):
+        return None, None
+    
+    parts = filename.replace('.jpg', '').split('_best_sample_')
+    if len(parts) != 2:
+        return None, None
+    
+    class_name = parts[0]
+    try:
+        index = int(parts[1])
+        return class_name, index
+    except ValueError:
+        return None, None
+
+
+def get_paste_samples_by_class(paste_sample_dir, class_names):
+    """获取按类别分组的粘贴样本
+    
+    Args:
+        paste_sample_dir: 粘贴样本目录
+        class_names: 类别名称列表
+    
+    Returns:
+        dict: {class_name: [sample_files]}
+    """
+    paste_samples = {}
+    for class_name in class_names:
+        paste_samples[class_name] = []
+    
+    if not os.path.exists(paste_sample_dir):
+        return paste_samples
+    
+    for filename in os.listdir(paste_sample_dir):
+        class_name, index = parse_paste_sample_filename(filename)
+        if class_name in class_names:
+            paste_samples[class_name].append(filename)
+    
+    return paste_samples
+
+
+def paste_sample_on_image(base_image, paste_image, paste_x, paste_y, paste_width, paste_height):
+    """将粘贴样本粘贴到基础图像上
+    
+    Args:
+        base_image: 基础图像 (numpy array)
+        paste_image: 粘贴样本图像 (numpy array)
+        paste_x, paste_y: 粘贴位置 (像素坐标)
+        paste_width, paste_height: 粘贴尺寸 (像素)
+    
+    Returns:
+        numpy array: 粘贴后的图像
+    """
+    # 调整粘贴样本尺寸
+    paste_image_resized = cv2.resize(paste_image, (paste_width, paste_height))
+    
+    # 获取基础图像尺寸
+    h, w = base_image.shape[:2]
+    
+    # 确保粘贴位置在图像范围内
+    x1 = max(0, paste_x)
+    y1 = max(0, paste_y)
+    x2 = min(w, paste_x + paste_width)
+    y2 = min(h, paste_y + paste_height)
+    
+    if x2 <= x1 or y2 <= y1:
+        return base_image
+    
+    # 计算实际粘贴区域
+    paste_x_offset = max(0, -paste_x)
+    paste_y_offset = max(0, -paste_y)
+    paste_w_actual = x2 - x1
+    paste_h_actual = y2 - y1
+    
+    # 粘贴样本
+    base_image[y1:y2, x1:x2] = paste_image_resized[paste_y_offset:paste_y_offset+paste_h_actual, 
+                                                   paste_x_offset:paste_x_offset+paste_w_actual]
+    
+    return base_image
+
+
+def copy_paste_augmentation(source_dataset, paste_sample_dir, save_dir, split):
+    """复制粘贴增强
+    
+    Args:
+        source_dataset: 源数据集（yaml配置文件）
+        paste_sample_dir: 粘贴样本目录
+        save_dir: 保存目录
+        split: 数据集分割（train/val）
+
+    source_dataset是任务数据集的yaml配置文件，paste_sample_dir是记忆库当中的样本目录，
+    复制粘贴增强的实现方式是：
+    1. 遍历source_dataset当中的指定split的样本，对于每个样本：
+        1.1 随机生成一个[0, 3]的整数，作为粘贴样本的数量
+        1.2 随机抽取相应数量的paste_sample_dir当中的样本
+        1.3 将抽取的样本粘贴到数据集样本的随机位置，如果粘贴样本与数据集样本的实例有重叠（IoU>0.5），则删除数据集样本中对应实例的标注
+        1.4 为增强后的样本生成新的标签，将粘贴样本的类别和边界框添加到数据集样本的标签当中
+        1.5 将增强后的样本保存到f'{save_dir}/images/{split}'目录下，新标签保存到f'{save_dir}/labels/{split}'目录下
+    2. 生成新的yaml配置文件，保存到f'{save_dir}/dataset.yaml'目录下，可以直接复制source_dataset当中的dataset.yaml文件内容
+
+    声明：
+    1. paste_sample_dir当中的样本文件命名是:{class_name}_best_sample_{index}.jpg
+    2. 所有paste_sample_dir当中的样本类别都能够在source_dataset当中的names字段中找到
+    """
+    # 读取源数据集配置
+    yaml_data = yaml_load(source_dataset)
+    class_names = list(yaml_data['names'].values())
+    class_name_to_id = {name: idx for idx, name in yaml_data['names'].items()}
+    
+    # 获取粘贴样本
+    paste_samples = get_paste_samples_by_class(paste_sample_dir, class_names)
+    
+    # 创建保存目录
+    images_save_dir = os.path.join(save_dir, 'images', split)
+    labels_save_dir = os.path.join(save_dir, 'labels', split)
+    os.makedirs(images_save_dir, exist_ok=True)
+    os.makedirs(labels_save_dir, exist_ok=True)
+    
+    # 获取源数据集图像和标签路径
+    source_images_dir = os.path.join(os.path.dirname(source_dataset), yaml_data[split])
+    source_labels_dir = os.path.join(os.path.dirname(source_dataset), 'labels', split)
+    
+    # 获取所有图像文件
+    image_files = [f for f in os.listdir(source_images_dir) if f.endswith(('.jpg', '.jpeg', '.png'))]
+    
+    print(f"Processing {len(image_files)} images for {split} split...")
+    
+    for image_file in tqdm(image_files, desc=f"Copy-paste augmentation for {split}"):
+        # 读取基础图像
+        image_path = os.path.join(source_images_dir, image_file)
+        base_image = cv2.imread(image_path)
+        if base_image is None:
+            continue
+        
+        h, w = base_image.shape[:2]
+        
+        # 读取基础标签
+        label_file = os.path.splitext(image_file)[0] + '.txt'
+        label_path = os.path.join(source_labels_dir, label_file)
+        base_labels = []
+        if os.path.exists(label_path):
+            with open(label_path, 'r') as f:
+                base_labels = [line.strip().split() for line in f.readlines()]
+        
+        # 随机决定粘贴样本数量 (0-3)
+        num_paste_samples = random.randint(0, 3)
+        
+        # 复制基础图像和标签
+        augmented_image = base_image.copy()
+        augmented_labels = base_labels.copy()
+        
+        # 记录需要删除的原始标注索引
+        labels_to_remove = set()
+        
+        # 记录已粘贴样本的边界框，用于检查粘贴样本之间的重叠
+        pasted_boxes = []
+        
+        for _ in range(num_paste_samples):
+            # 随机选择一个类别
+            available_classes = [cls for cls in class_names if paste_samples[cls]]
+            if not available_classes:
+                break
+            
+            selected_class = random.choice(available_classes)
+            selected_sample = random.choice(paste_samples[selected_class])
+            
+            # 读取粘贴样本图像
+            paste_image_path = os.path.join(paste_sample_dir, selected_sample)
+            paste_image = cv2.imread(paste_image_path)
+            if paste_image is None:
+                continue
+            
+            # 随机生成粘贴位置和尺寸
+            paste_h, paste_w = paste_image.shape[:2]
+            max_paste_w = min(w // 3, paste_w)
+            max_paste_h = min(h // 3, paste_h)
+            
+            paste_width = random.randint(max_paste_w // 2, max_paste_w)
+            paste_height = random.randint(max_paste_h // 2, max_paste_h)
+            
+            # 尝试找到不重叠的位置
+            max_attempts = 50  # 最大尝试次数
+            valid_position_found = False
+            
+            for attempt in range(max_attempts):
+                paste_x = random.randint(0, w - paste_width)
+                paste_y = random.randint(0, h - paste_height)
+                
+                # 计算粘贴样本的归一化边界框
+                paste_center_x = (paste_x + paste_width / 2) / w
+                paste_center_y = (paste_y + paste_height / 2) / h
+                paste_norm_width = paste_width / w
+                paste_norm_height = paste_height / h
+                
+                paste_box = [paste_center_x, paste_center_y, paste_norm_width, paste_norm_height]
+                
+                # 检查与现有标注的重叠
+                overlap_with_existing = False
+                for i, label in enumerate(augmented_labels):
+                    if len(label) >= 5:
+                        existing_box = [float(label[1]), float(label[2]), float(label[3]), float(label[4])]
+                        iou = calculate_iou(paste_box, existing_box)
+                        if iou > 0.5:
+                            labels_to_remove.add(i)
+                            overlap_with_existing = True
+                
+                # 检查与已粘贴样本的重叠
+                overlap_with_pasted = False
+                for pasted_box in pasted_boxes:
+                    iou = calculate_iou(paste_box, pasted_box)
+                    if iou > 1e-3:
+                        overlap_with_pasted = True
+                        break
+                
+                # 如果位置合适，跳出循环
+                if not overlap_with_pasted:
+                    valid_position_found = True
+                    break
+            
+            # 如果没有找到合适的位置，跳过这个样本
+            if not valid_position_found:
+                continue
+            
+            # 粘贴样本到图像
+            augmented_image = paste_sample_on_image(augmented_image, paste_image, 
+                                                   paste_x, paste_y, paste_width, paste_height)
+            
+            # 添加粘贴样本的标注
+            class_id = class_name_to_id[selected_class]
+            augmented_labels.append([str(class_id), str(paste_center_x), str(paste_center_y), 
+                                   str(paste_norm_width), str(paste_norm_height)])
+            
+            # 记录已粘贴的边界框
+            pasted_boxes.append(paste_box)
+        
+        # 删除重叠的原始标注
+        final_labels = []
+        for i, label in enumerate(augmented_labels):
+            if i not in labels_to_remove:
+                final_labels.append(label)
+        
+        # 保存增强后的图像
+        save_image_path = os.path.join(images_save_dir, image_file)
+        cv2.imwrite(save_image_path, augmented_image)
+        
+        # 保存增强后的标签
+        save_label_path = os.path.join(labels_save_dir, label_file)
+        with open(save_label_path, 'w') as f:
+            for label in final_labels:
+                f.write(' '.join(label) + '\n')
+    
+    # 复制并修改yaml配置文件
+    new_yaml_path = os.path.join(save_dir, 'dataset.yaml')
+    yaml_save(new_yaml_path, yaml_data)
+    
+    print(f"Copy-paste augmentation completed. Results saved to {save_dir}")
+    return new_yaml_path
+
+
+def crop_instance_from_image(image, bbox, class_name, index):
+    """从图像中裁剪出指定边界框的实例
+    
+    Args:
+        image: 输入图像
+        bbox: 边界框 [x_center, y_center, width, height] (归一化坐标)
+        class_name: 类别名称
+        index: 索引
+    
+    Returns:
+        tuple: (cropped_image, filename)
+    """
+    h, w = image.shape[:2]
+    
+    # 转换为像素坐标
+    x_center = int(bbox[0] * w)
+    y_center = int(bbox[1] * h)
+    bbox_width = int(bbox[2] * w)
+    bbox_height = int(bbox[3] * h)
+    
+    # 计算边界框的左上角坐标
+    x1 = max(0, x_center - bbox_width // 2)
+    y1 = max(0, y_center - bbox_height // 2)
+    x2 = min(w, x_center + bbox_width // 2)
+    y2 = min(h, y_center + bbox_height // 2)
+    
+    # 裁剪图像
+    cropped = image[y1:y2, x1:x2]
+    
+    # 生成文件名
+    filename = f"{class_name}_sample_{index}.jpg"
+    
+    return cropped, filename
+
+
+def mix_up_augmentation(source_dataset, cropped_sample_dir, save_dir, split, num_generations):
+    """mix-up增强
+    
+    Args:
+        source_dataset: 源数据集（yaml配置文件）
+        cropped_sample_dir: 裁剪样本目录
+        save_dir: 保存目录
+        split: 数据集分割（train/val）
+        num_generations: 生成的新样本数量
+
+    source_dataset是任务数据集的yaml配置文件，cropped_sample_dir是记忆库当中的样本目录，
+    mix-up增强的实现方式是：
+    1. 读取source_dataset当中的指定split的图像，对于每个图像,
+       裁剪下它当中包含的全部实例，按照命名格式：{class_name}_sample_{index}.jpg，
+       保存至save_dir/cropped_samples_source目录下
+    2. 遍历save_dir/cropped_samples_source当中的样本，对于每个样本：
+        2.1 随机选择一个cropped_sample_dir当中的样本
+        2.2 将两个样本变换到相同的图像尺度，并以\lambda和(1-\lambda)的权重进行像素相加，生成新的样本
+        2.3 将新的样本保存到f'{save_dir}/mixed_up_samples目录下，命名格式为: {class_name_1}_{class_name_2}_mixed_up_sample_{index}.jpg
+    3. 生成num_generations个新的样本，对于每个样本：
+        3.1 首先以噪声图作为基础图像，图像尺度为(640, 640)
+        3.2 生成[1, 4]之间的随机数，记为k
+        3.3 从save_dir/mixed_up_samples目录下随机选择k个样本
+        3.4 将这k个样本粘贴到基础图像上，确保粘贴的过程中不会互相遮挡（IoU>0.5）
+        3.5 将生成的新图像保存至save_dir目录下，命名格式为: sample_{index}.jpg
+    4. 删除中间裁剪得到的图像和混合得到的图像，只保留最终的样本
+
+    声明：
+    1. \lambda的取值服从beta分布，参数为(1, 1)
+    2. 所有cropped_sample_dir当中的样本文件命名是:{class_name}_best_sample_{index}.jpg
+    3. 不需要生成标签文件和yaml配置文件，只需要保存最终的样本到save_dir目录下
+    """
+    # 读取源数据集配置
+    yaml_data = yaml_load(source_dataset)
+    class_names = list(yaml_data['names'].values())
+    class_name_to_id = {name: idx for idx, name in yaml_data['names'].items()}
+    
+    # 创建保存目录
+    cropped_source_dir = os.path.join(save_dir, 'cropped_samples_source')
+    mixed_up_dir = os.path.join(save_dir, 'mixed_up_samples')
+    final_samples_dir = os.path.join(save_dir)
+    
+    os.makedirs(cropped_source_dir, exist_ok=True)
+    os.makedirs(mixed_up_dir, exist_ok=True)
+    os.makedirs(final_samples_dir, exist_ok=True)
+    
+    # 获取源数据集图像和标签路径
+    source_images_dir = os.path.join(os.path.dirname(source_dataset), yaml_data[split])
+    source_labels_dir = os.path.join(os.path.dirname(source_dataset), 'labels', split)
+    
+    print(f"Step 1: Cropping instances from source dataset...")
+    
+    # 步骤1: 裁剪源数据集中的实例
+    cropped_count = 0
+    image_files = [f for f in os.listdir(source_images_dir) if f.endswith(('.jpg', '.jpeg', '.png'))]
+    
+    for image_file in tqdm(image_files, desc="Cropping instances"):
+        # 读取图像
+        image_path = os.path.join(source_images_dir, image_file)
+        image = cv2.imread(image_path)
+        if image is None:
+            continue
+        
+        # 读取标签
+        label_file = os.path.splitext(image_file)[0] + '.txt'
+        label_path = os.path.join(source_labels_dir, label_file)
+        
+        if os.path.exists(label_path):
+            with open(label_path, 'r') as f:
+                labels = [line.strip().split() for line in f.readlines()]
+            
+            # 裁剪每个实例
+            for i, label in enumerate(labels):
+                if len(label) >= 5:
+                    class_id = int(label[0])
+                    if class_id < len(class_names):
+                        class_name = class_names[class_id]
+                        bbox = [float(label[1]), float(label[2]), float(label[3]), float(label[4])]
+                        
+                        cropped_image, filename = crop_instance_from_image(image, bbox, class_name, cropped_count)
+                        
+                        if cropped_image.size > 0:  # 确保裁剪的图像不为空
+                            save_path = os.path.join(cropped_source_dir, filename)
+                            cv2.imwrite(save_path, cropped_image)
+                            cropped_count += 1
+    
+    print(f"Cropped {cropped_count} instances from source dataset")
+    
+    print(f"Step 2: Creating mixed-up samples...")
+    
+    # 步骤2: 创建mix-up样本
+    mixed_up_count = 0
+    cropped_source_files = [f for f in os.listdir(cropped_source_dir) if f.endswith('.jpg')]
+    
+    # 获取记忆库样本
+    memory_samples = {}
+    if os.path.exists(cropped_sample_dir):
+        for filename in os.listdir(cropped_sample_dir):
+            if filename.endswith('.jpg'):
+                class_name, index = parse_paste_sample_filename(filename)
+                if class_name in class_names:
+                    if class_name not in memory_samples:
+                        memory_samples[class_name] = []
+                    memory_samples[class_name].append(filename)
+    
+    for source_file in tqdm(cropped_source_files, desc="Creating mixed-up samples"):
+        # 解析源文件名
+        parts = source_file.replace('.jpg', '').split('_sample_')
+        if len(parts) != 2:
+            continue
+        
+        source_class = parts[0]
+        
+        # 随机选择记忆库中的样本
+        available_classes = list(memory_samples.keys())
+        if not available_classes:
+            continue
+        
+        memory_class = random.choice(available_classes)
+        memory_file = random.choice(memory_samples[memory_class])
+        
+        # 读取源样本
+        source_path = os.path.join(cropped_source_dir, source_file)
+        source_image = cv2.imread(source_path)
+        
+        # 读取记忆库样本
+        memory_path = os.path.join(cropped_sample_dir, memory_file)
+        memory_image = cv2.imread(memory_path)
+        
+        if source_image is None or memory_image is None:
+            continue
+        
+        # 调整到相同尺寸 (使用较小的尺寸)
+        target_size = (min(source_image.shape[1], memory_image.shape[1]), 
+                      min(source_image.shape[0], memory_image.shape[0]))
+        
+        source_resized = cv2.resize(source_image, target_size)
+        memory_resized = cv2.resize(memory_image, target_size)
+        
+        # 生成lambda值 (beta分布，参数为(1,1))
+        lambda_val = np.random.beta(1, 1)
+        
+        # 进行mix-up
+        mixed_image = cv2.addWeighted(source_resized, lambda_val, memory_resized, 1 - lambda_val, 0)
+        
+        # 保存mix-up样本
+        mixed_filename = f"{source_class}_{memory_class}_mixed_up_sample_{mixed_up_count}.jpg"
+        mixed_path = os.path.join(mixed_up_dir, mixed_filename)
+        cv2.imwrite(mixed_path, mixed_image)
+        mixed_up_count += 1
+    
+    print(f"Created {mixed_up_count} mixed-up samples")
+    
+    print(f"Step 3: Generating final samples...")
+    
+    # 步骤3: 生成最终样本
+    mixed_up_files = [f for f in os.listdir(mixed_up_dir) if f.endswith('.jpg')]
+    generation_log = {}
+    
+    for i in tqdm(range(num_generations), desc="Generating final samples"):
+        # 创建噪声基础图像 (640x640)
+        base_image = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
+        
+        # 随机选择k个mix-up样本 (1-4个)
+        k = random.randint(1, 4)
+        selected_samples = random.sample(mixed_up_files, min(k, len(mixed_up_files)))
+        
+        # 记录使用的样本
+        generation_log[f"sample_{i}.jpg"] = selected_samples
+        
+        # 粘贴选中的样本到基础图像上
+        pasted_boxes = []
+        
+        for sample_file in selected_samples:
+            # 读取样本图像
+            sample_path = os.path.join(mixed_up_dir, sample_file)
+            sample_image = cv2.imread(sample_path)
+            
+            if sample_image is None:
+                continue
+            
+            # 随机生成粘贴位置和尺寸
+            sample_h, sample_w = sample_image.shape[:2]
+            
+            paste_width = random.randint(int(sample_w * 0.75), sample_w)
+            paste_height = random.randint(int(sample_h * 0.75), sample_h)
+            
+            # 尝试找到不重叠的位置
+            max_attempts = 50
+            valid_position_found = False
+            
+            for attempt in range(max_attempts):
+                paste_x = random.randint(0, 640 - paste_width)
+                paste_y = random.randint(0, 640 - paste_height)
+                
+                # 计算粘贴样本的归一化边界框
+                paste_center_x = (paste_x + paste_width / 2) / 640
+                paste_center_y = (paste_y + paste_height / 2) / 640
+                paste_norm_width = paste_width / 640
+                paste_norm_height = paste_height / 640
+                
+                paste_box = [paste_center_x, paste_center_y, paste_norm_width, paste_norm_height]
+                
+                # 检查与已粘贴样本的重叠
+                overlap = False
+                for pasted_box in pasted_boxes:
+                    iou = calculate_iou(paste_box, pasted_box)
+                    if iou > 1e-3:
+                        overlap = True
+                        break
+                
+                if not overlap:
+                    valid_position_found = True
+                    break
+            
+            if valid_position_found:
+                # 粘贴样本到图像
+                sample_resized = cv2.resize(sample_image, (paste_width, paste_height))
+                base_image[paste_y:paste_y+paste_height, paste_x:paste_x+paste_width] = sample_resized
+                pasted_boxes.append(paste_box)
+        
+        # 保存最终样本
+        final_filename = f"sample_{i}.jpg"
+        final_path = os.path.join(final_samples_dir, final_filename)
+        cv2.imwrite(final_path, base_image)
+    
+    # 步骤4: 删除中间文件
+    shutil.rmtree(cropped_source_dir)
+    shutil.rmtree(mixed_up_dir)
+    
+    return save_dir

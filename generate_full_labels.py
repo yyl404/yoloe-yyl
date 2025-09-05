@@ -14,6 +14,8 @@ if __name__ == "__main__":
     parser.add_argument("--inc_data", type=str, default="/hy-tmp/VOC_inc_15_1_1_1_1_1/incremental_config.yaml")
     parser.add_argument("--full_data", type=str, default="/hy-tmp/VOC/VOC.yaml")
     parser.add_argument("--output_dir", type=str, default="/hy-tmp/VOC_inc_15_1_1_1_1_1_full-labels")
+    parser.add_argument("--only_val", action="store_true", help="训练集只进行ID转换，验证集补充历史类别标签")
+    parser.add_argument("--only_train", action="store_true", help="验证集只进行ID转换，训练集补充历史类别标签")
     args = parser.parse_args()
 
     print("🚀 开始生成完整标签数据集...")
@@ -121,19 +123,45 @@ if __name__ == "__main__":
                             _line = _line.split(" ")
                             cat_id_in_full_data = int(_line[0])
                             cat_name_in_full_data = full_data_names[cat_id_in_full_data]
-                            if split == "train" and cat_name_in_full_data in encountered_categories:
-                                cat_id_in_output_label = encountered_categories.index(cat_name_in_full_data)
-                                _line[0] = str(cat_id_in_output_label)
-                                os.makedirs(os.path.dirname(output_label_path), exist_ok=True)
-                                with open(output_label_path, "a") as f:
-                                    f.write(" ".join(_line) + "\n")
-                            elif split != "train" and cat_name_in_full_data in categories_current_task:
-                                # 验证集和测试集只保留当前任务的类别，其他类别的精度无关
-                                cat_id_in_output_label = categories_current_task.index(cat_name_in_full_data)
-                                _line[0] = str(cat_id_in_output_label)
-                                os.makedirs(os.path.dirname(output_label_path), exist_ok=True)
-                                with open(output_label_path, "a") as f:
-                                    f.write(" ".join(_line) + "\n")
+                            if args.only_val:
+                                if split == "train" and cat_name_in_full_data in categories_current_task:
+                                    cat_id_in_output_label = encountered_categories.index(cat_name_in_full_data)
+                                    _line[0] = str(cat_id_in_output_label)
+                                    os.makedirs(os.path.dirname(output_label_path), exist_ok=True)
+                                    with open(output_label_path, "a") as f:
+                                        f.write(" ".join(_line) + "\n")
+                                elif split != "train" and cat_name_in_full_data in encountered_categories:
+                                    cat_id_in_output_label = encountered_categories.index(cat_name_in_full_data)
+                                    _line[0] = str(cat_id_in_output_label)
+                                    os.makedirs(os.path.dirname(output_label_path), exist_ok=True)
+                                    with open(output_label_path, "a") as f:
+                                        f.write(" ".join(_line) + "\n")
+                            elif args.only_train:
+                                if split == "train" and cat_name_in_full_data in encountered_categories:
+                                    cat_id_in_output_label = encountered_categories.index(cat_name_in_full_data)
+                                    _line[0] = str(cat_id_in_output_label)
+                                    os.makedirs(os.path.dirname(output_label_path), exist_ok=True)
+                                    with open(output_label_path, "a") as f:
+                                        f.write(" ".join(_line) + "\n")
+                                elif split != "train" and cat_name_in_full_data in categories_current_task:
+                                    cat_id_in_output_label = encountered_categories.index(cat_name_in_full_data)
+                                    _line[0] = str(cat_id_in_output_label)
+                                    os.makedirs(os.path.dirname(output_label_path), exist_ok=True)
+                                    with open(output_label_path, "a") as f:
+                                        f.write(" ".join(_line) + "\n")
+                            else:
+                                if split == "train" and cat_name_in_full_data in encountered_categories:
+                                    cat_id_in_output_label = encountered_categories.index(cat_name_in_full_data)
+                                    _line[0] = str(cat_id_in_output_label)
+                                    os.makedirs(os.path.dirname(output_label_path), exist_ok=True)
+                                    with open(output_label_path, "a") as f:
+                                        f.write(" ".join(_line) + "\n")
+                                elif split != "train" and cat_name_in_full_data in encountered_categories:
+                                    cat_id_in_output_label = encountered_categories.index(cat_name_in_full_data)
+                                    _line[0] = str(cat_id_in_output_label)
+                                    os.makedirs(os.path.dirname(output_label_path), exist_ok=True)
+                                    with open(output_label_path, "a") as f:
+                                        f.write(" ".join(_line) + "\n")
                     
                     # 复制图像文件
                     os.makedirs(os.path.dirname(output_image_path), exist_ok=True)

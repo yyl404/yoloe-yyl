@@ -6,42 +6,11 @@ import argparse
 import torch
 import json
 import shutil
-import multiprocessing as mp
 
-from ultralytics import YOLO
 from ultralytics.utils import yaml_load
 
 from tools.incremental_utils import merge_task_classes, transfer_weights, create_id_converted_dataset, \
     copy_paste_augmentation, mix_up_augmentation
-
-
-def worker_train_model(args_dict, save_path):
-    """训练工作进程"""
-    # 解析参数
-    data = args_dict['data']
-    epochs = args_dict['epochs']
-    batch = args_dict['batch']
-    workers = args_dict['workers']
-    device = args_dict['device']
-    val_interval = args_dict['val_interval']
-    project = args_dict['project']
-    name = args_dict['name']
-    save_period = args_dict['save_period']
-    model_path = args_dict['model_path']
-    checkpoint = args_dict['checkpoint']
-    
-    # 开始训练
-    if checkpoint:  # 如果checkpoint存在，则加载checkpoint训练
-        model = YOLO(checkpoint)
-        model.train(data=data, epochs=epochs, batch=batch, workers=workers, device=device,
-                    resume=True, project=project, name=name, val_interval=val_interval, 
-                    save_period=save_period)
-    else:
-        model = YOLO(model_path)
-        model.train(data=data, epochs=epochs, batch=batch, workers=workers, device=device,
-                    project=project, name=name, val_interval=val_interval, save_period=save_period)
-    
-    model.save(save_path)
 
 
 def run(cmd, env=None):
@@ -153,48 +122,48 @@ def main():
             # 更新checkpoint
             save_checkpoint(save_dir, encountered_classes, merged_classes, model_path,
                 encountered_classes_id_to_new_id=None, task_classes_id_to_new_id=None, training_task_idx=i)
-            
-            args_dict = {
-                "data": task_yaml,
-                "epochs": epochs,
-                "batch": batch,
-                "workers": workers,
-                "device": device,
-                "val_interval": 1,
-                "project": save_dir,
-                "name": f"train-task{i}",
-                "save_period": save_period,
-                "model_path": model_path,
-                "checkpoint": task_checkpoint
-            }
-            p = mp.Process(target=worker_train_model, args=(args_dict, os.path.join(save_dir, f"{model_name}-task{i}.pt")))
-            p.start()
-            p.join()
-            
+            cmd = [
+                sys.executable,
+                f"{script_dir}/train_incremental_naive.py",
+                "--data", task_yaml,
+                "--save_dir", save_dir,
+                "--task_id", str(i),
+                "--model_name", model_name,
+                "--model_path", model_path,
+                "--epochs", str(epochs),
+                "--batch", str(batch),
+                "--workers", str(workers),
+                "--save_period", str(save_period)
+            ]
+            if task_checkpoint is not None:
+                cmd.extend(["--checkpoint", task_checkpoint])
+            run(cmd, env)
         elif method == "naive": # 如果方法为naive，先将数据集类别id进行转换，然后训练
             # 更新checkpoint
             save_checkpoint(save_dir, encountered_classes, merged_classes, model_path,
                 encountered_classes_id_to_new_id, task_classes_id_to_new_id, i)
             # 将数据集类别id进行转换
             create_id_converted_dataset(task_yaml, task_classes_id_to_new_id, save_dir, f"task_{i}_converted", merged_classes)
-            
-            args_dict = {
-                "data": os.path.join(save_dir, f"task_{i}_converted/dataconfig.yaml"),
-                "epochs": epochs,
-                "batch": batch,
-                "workers": workers,
-                "device": device,
-                "val_interval": 1,
-                "project": save_dir,
-                "name": f"train-task{i}",
-                "save_period": save_period,
-                "model_path": model_path,
-                "checkpoint": task_checkpoint
-            }
-            p = mp.Process(target=worker_train_model, args=(args_dict, os.path.join(save_dir, f"{model_name}-task{i}.pt")))
-            p.start()
-            p.join()
-            
+            cmd = [
+                sys.executable,
+                f"{script_dir}/train_incremental_naive.py",
+                "--data", os.path.join(save_dir, f"task_{i}_converted/dataconfig.yaml"),
+                "--save_dir", save_dir,
+                "--task_id", str(i),
+                "--model_name", model_name,
+                "--model_path", model_path,
+                "--epochs", str(epochs),
+                "--batch", str(batch),
+                "--workers", str(workers),
+                "--save_period", str(save_period)
+            ]
+            if task_checkpoint is not None:
+                cmd.extend(["--checkpoint", task_checkpoint])
+            run(cmd, env)
+            # 删除转换后的数据集
+            shutil.rmtree(os.path.join(save_dir, f"task_{i}_converted"))
+            # 删除迁移后的模型
+            os.remove(os.path.join(save_dir, f"{model_name}-task{i}-transferred.pt"))
         elif method == "pseudo_labels":
             # 更新checkpoint
             save_checkpoint(save_dir, encountered_classes, merged_classes, model_path,

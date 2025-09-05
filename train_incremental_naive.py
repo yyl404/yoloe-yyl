@@ -7,6 +7,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=str)
     parser.add_argument("--save_dir", type=str)
+    parser.add_argument("--save_period", type=int, default=-1)
     parser.add_argument("--task_id", type=int)
     parser.add_argument("--model_name", type=str)
     parser.add_argument("--model_path", type=str)
@@ -14,17 +15,19 @@ def main():
     parser.add_argument("--batch", type=int, default=16)
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--checkpoint", type=str)
-    parser.add_argument("--model_save_path", type=str, default=None)
+    parser.add_argument("--model_save_path", type=str)
     args = parser.parse_args()
+
+    save_period = args.save_period
 
     if args.checkpoint: # 如果checkpoint存在，则加载checkpoint训练
         model = YOLO(args.checkpoint)
         model.train(data=args.data, epochs=args.epochs, batch=args.batch, workers=args.workers,
-                    resume=True, project=args.save_dir, name=f"task{args.task_id}", val_interval=1)
+                    resume=True, project=args.save_dir, name=f"task{args.task_id}", val_interval=1, save_period=save_period)
     else:
         model = YOLO(args.model_path)
         model.train(data=args.data, epochs=args.epochs, batch=args.batch, workers=args.workers,
-                    project=args.save_dir, name=f"task{args.task_id}", val_interval=1)
+                    project=args.save_dir, name=f"task{args.task_id}", val_interval=1, save_period=save_period)
     
     if args.model_save_path is not None:
         model.save(args.model_save_path)

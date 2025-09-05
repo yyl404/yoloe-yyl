@@ -86,6 +86,7 @@ from .transformer import (
     TransformerEncoderLayer,
     TransformerLayer,
 )
+from .wtconv import WTConv, WTConv2d
 
 __all__ = (
     "Conv",
@@ -101,6 +102,8 @@ __all__ = (
     "SpatialAttention",
     "CBAM",
     "Concat",
+    "WTConv",
+    "WTConv2d",
     "TransformerLayer",
     "TransformerBlock",
     "MLPBlock",
